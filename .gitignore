@@ -1,13 +1,59 @@
+# ---- Dependencies --------------------------------------------------------------------------
 node_modules/
+.pnpm-store/
+
+# ---- Build output & caches -----------------------------------------------------------------
 dist/
+build/
+out/
 .next/
 .turbo/
+.vite/
+.cache/
+*.tsbuildinfo
+next-env.d.ts
+.eslintcache
+
+# ---- Tests & coverage ----------------------------------------------------------------------
 coverage/
+test-results/
+playwright-report/
+blob-report/
+
+# ---- Logs ----------------------------------------------------------------------------------
 *.log
+logs/
+
+# ---- Secrets & local configuration (never commit) ------------------------------------------
 .env
 .env.*
 !.env.example
+keys
+keys.*
+keys/
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.local
+
+# ---- Editors & OS --------------------------------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
-next-env.d.ts
-*.tsbuildinfo
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ---- Local tooling -------------------------------------------------------------------------
 .claude/launch.json
+.claude/settings.local.json
+.vercel/
+tmp/
+*.tmp
