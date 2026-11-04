@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
-import { ApiError, api, type Bot, type BotDetail, type Language, type Me, type Pack } from "@/lib/api";
+import { ApiError, api, type Bot, type Language, type Me, type Pack } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
 export default function DashboardPage() {
@@ -119,8 +120,6 @@ function BotsSection({ tenantId }: { tenantId: string }) {
   const [bots, setBots] = useState<Bot[] | null>(null);
   const [packs, setPacks] = useState<Pack[]>([]);
   const [languages, setLanguages] = useState<Language[]>([]);
-  const [selected, setSelected] = useState<BotDetail | null>(null);
-
   const load = useCallback(async () => {
     const data = await api<{ bots: Bot[] }>(`/v1/tenants/${tenantId}/bots`);
     setBots(data.bots);
@@ -133,10 +132,6 @@ function BotsSection({ tenantId }: { tenantId: string }) {
       setLanguages(d.languages.filter((l) => l.tier !== "owner")),
     );
   }, [load]);
-
-  async function openBot(id: string) {
-    setSelected(await api<BotDetail>(`/v1/tenants/${tenantId}/bots/${id}`));
-  }
 
   return (
     <section className="card flex flex-col gap-4 p-5">
@@ -151,13 +146,12 @@ function BotsSection({ tenantId }: { tenantId: string }) {
         <ul className="flex flex-col divide-y divide-[var(--border)]">
           {bots.map((bot) => (
             <li key={bot.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
-              <button
-                type="button"
+              <Link
+                href={`/t/${tenantId}/bots/${bot.id}`}
                 className="text-start font-medium underline-offset-4 hover:underline"
-                onClick={() => openBot(bot.id)}
               >
                 {bot.name}
-              </button>
+              </Link>
               <span className="muted text-sm">
                 {packs.find((p) => p.slug === bot.pack)?.name ?? bot.pack} · {t(`bots.status.${bot.status}`)}{" "}
                 · {bot.languages.join(", ")}
@@ -165,17 +159,6 @@ function BotsSection({ tenantId }: { tenantId: string }) {
             </li>
           ))}
         </ul>
-      )}
-
-      {selected && (
-        <div className="flex flex-col gap-2">
-          <h3 className="font-medium">
-            {t("bots.embedCode")} — {selected.bot.name}
-          </h3>
-          <pre className="card overflow-x-auto p-3 text-xs" dir="ltr">
-            {`<script src="https://cdn.traiblazer.example/widget.js" data-bot="${selected.keys[0]?.publicKey ?? ""}" async></script>`}
-          </pre>
-        </div>
       )}
 
       <CreateBotForm tenantId={tenantId} packs={packs} languages={languages} onCreated={load} />

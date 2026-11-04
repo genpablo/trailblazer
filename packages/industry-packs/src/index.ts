@@ -386,3 +386,5 @@ export function isSelectable(
   if (variant == null) return true;
   return pack.variants.some((x) => x.slug === variant);
 }
+
+export { getPackGuidance, type PackGuidance } from "./guidance.js";

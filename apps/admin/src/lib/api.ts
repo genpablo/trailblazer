@@ -36,11 +36,50 @@ export interface Bot {
   status: "draft" | "active" | "paused";
   languages: string[];
   defaultLanguage: string;
+  hostedPageEnabled: boolean;
+  settings: { color?: string };
 }
 
 export interface BotDetail {
   bot: Bot;
   keys: { id: string; publicKey: string; allowedOrigins: string[] }[];
+  pack: Pack | null;
+  chatUrl: string;
+}
+
+export interface Source {
+  id: string;
+  type: "website" | "text";
+  title: string;
+  url: string | null;
+  status: "pending" | "processing" | "ready" | "failed";
+  error: string | null;
+  documentCount: number;
+  lastSyncedAt: string | null;
+}
+
+export interface QaPair {
+  id: string;
+  question: string;
+  answer: string;
+  language: string;
+}
+
+export interface Conversation {
+  id: string;
+  channel: string;
+  language: string | null;
+  messageCount: number;
+  lastMessageAt: string;
+}
+
+export interface ConversationMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+  model: string | null;
+  costMicros: number | null;
 }
 
 export interface Pack {

@@ -1,5 +1,8 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
+  boolean,
+  customType,
   foreignKey,
   index,
   integer,
@@ -11,6 +14,21 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+
+/** Postgres full-text vector. Written with sql`to_tsvector(...)`, never read back by the app. */
+const tsvector = customType<{ data: string }>({
+  dataType: () => "tsvector",
+});
+
+/**
+ * pgvector column without fixed dimensions, so different embedding models can coexist; rows record
+ * `embedding_model` and searches only compare rows of the same model.
+ */
+const vector = customType<{ data: number[]; driverData: string }>({
+  dataType: () => "vector",
+  toDriver: (value) => `[${value.join(",")}]`,
+  fromDriver: (value) => JSON.parse(value) as number[],
+});
 
 /*
  * Tenancy model
@@ -100,6 +118,16 @@ export const memberships = pgTable(
 // Tenant-owned tables (RLS enforced)
 // ---------------------------------------------------------------------------------------------
 
+export interface BotSettings {
+  /** Brand color for the chat header and launcher, e.g. "#1f6f5c". */
+  color?: string;
+  /** Greeting per language code; falls back to a default greeting. */
+  greeting?: Record<string, string>;
+  /** Suggested first questions per language code. */
+  quickReplies?: Record<string, string[]>;
+  launcherPosition?: "right" | "left";
+}
+
 export const botStatuses = ["draft", "active", "paused"] as const;
 export type BotStatus = (typeof botStatuses)[number];
 
@@ -125,7 +153,9 @@ export const bots = pgTable(
     defaultLanguage: text("default_language").notNull().default("en"),
     modelProfile: text("model_profile").notNull().default("default"),
     persona: text("persona"),
-    settings: jsonb("settings").$type<Record<string, unknown>>().notNull().default({}),
+    /** Whether the public chat link (/c/<key>) works as a full page, not only inside allowed sites. */
+    hostedPageEnabled: boolean("hosted_page_enabled").notNull().default(true),
+    settings: jsonb("settings").$type<BotSettings>().notNull().default({}),
     ...timestamps,
   },
   (t) => [
@@ -213,4 +243,280 @@ export const auditLogs = pgTable(
 );
 
 /** Tables protected by row-level security. Keep in sync with migrations. */
-export const rlsTables = ["bots", "bot_keys", "business_profiles", "audit_logs"] as const;
+// ---------------------------------------------------------------------------------------------
+// Knowledge (RLS enforced)
+// ---------------------------------------------------------------------------------------------
+
+export const sourceTypes = ["website", "text", "qa"] as const;
+export type SourceType = (typeof sourceTypes)[number];
+export const sourceStatuses = ["pending", "processing", "ready", "failed"] as const;
+export type SourceStatus = (typeof sourceStatuses)[number];
+
+export interface SourceSettings {
+  /** Website crawl: maximum pages to fetch. */
+  maxPages?: number;
+}
+
+export const knowledgeSources = pgTable(
+  "knowledge_sources",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    botId: uuid("bot_id").notNull(),
+    type: text("type").$type<SourceType>().notNull(),
+    title: text("title").notNull(),
+    /** Website: start URL. */
+    url: text("url"),
+    /** Text sources: the owner's text. */
+    content: text("content"),
+    status: text("status").$type<SourceStatus>().notNull().default("pending"),
+    error: text("error"),
+    settings: jsonb("settings").$type<SourceSettings>().notNull().default({}),
+    documentCount: integer("document_count").notNull().default(0),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    index("knowledge_sources_bot_idx").on(t.tenantId, t.botId),
+    unique("knowledge_sources_id_tenant_uq").on(t.id, t.tenantId),
+    foreignKey({
+      name: "knowledge_sources_bot_tenant_fk",
+      columns: [t.botId, t.tenantId],
+      foreignColumns: [bots.id, bots.tenantId],
+    }).onDelete("cascade"),
+  ],
+);
+
+export const documents = pgTable(
+  "documents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    botId: uuid("bot_id").notNull(),
+    sourceId: uuid("source_id").notNull(),
+    url: text("url"),
+    title: text("title"),
+    language: text("language"),
+    /** SHA-256 of the extracted text; unchanged pages are not re-chunked on re-sync. */
+    contentHash: text("content_hash").notNull(),
+    content: text("content").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    index("documents_source_idx").on(t.sourceId),
+    uniqueIndex("documents_source_url_uq").on(t.sourceId, t.url),
+    unique("documents_id_tenant_uq").on(t.id, t.tenantId),
+    foreignKey({
+      name: "documents_source_tenant_fk",
+      columns: [t.sourceId, t.tenantId],
+      foreignColumns: [knowledgeSources.id, knowledgeSources.tenantId],
+    }).onDelete("cascade"),
+  ],
+);
+
+export const chunks = pgTable(
+  "chunks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    botId: uuid("bot_id").notNull(),
+    documentId: uuid("document_id").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    heading: text("heading"),
+    content: text("content").notNull(),
+    language: text("language"),
+    tsv: tsvector("tsv").notNull(),
+    embedding: vector("embedding"),
+    embeddingModel: text("embedding_model"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("chunks_bot_idx").on(t.botId),
+    index("chunks_document_idx").on(t.documentId),
+    index("chunks_tsv_idx").using("gin", t.tsv),
+    index("chunks_content_trgm_idx").using("gin", sql`${t.content} gin_trgm_ops`),
+    foreignKey({
+      name: "chunks_document_tenant_fk",
+      columns: [t.documentId, t.tenantId],
+      foreignColumns: [documents.id, documents.tenantId],
+    }).onDelete("cascade"),
+  ],
+);
+
+export const qaPairs = pgTable(
+  "qa_pairs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    botId: uuid("bot_id").notNull(),
+    question: text("question").notNull(),
+    answer: text("answer").notNull(),
+    language: text("language").notNull().default("en"),
+    enabled: boolean("enabled").notNull().default(true),
+    tsv: tsvector("tsv").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    index("qa_pairs_bot_idx").on(t.botId),
+    index("qa_pairs_tsv_idx").using("gin", t.tsv),
+    index("qa_pairs_question_trgm_idx").using("gin", sql`${t.question} gin_trgm_ops`),
+    foreignKey({
+      name: "qa_pairs_bot_tenant_fk",
+      columns: [t.botId, t.tenantId],
+      foreignColumns: [bots.id, bots.tenantId],
+    }).onDelete("cascade"),
+  ],
+);
+
+// ---------------------------------------------------------------------------------------------
+// Conversations & usage (RLS enforced)
+// ---------------------------------------------------------------------------------------------
+
+export const channels = ["hosted", "inline", "widget", "playground"] as const;
+export type Channel = (typeof channels)[number];
+
+export const conversations = pgTable(
+  "conversations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    botId: uuid("bot_id").notNull(),
+    channel: text("channel").$type<Channel>().notNull(),
+    /** Random id kept in the visitor's browser; not linked to any personal data. */
+    visitorId: text("visitor_id").notNull(),
+    language: text("language"),
+    /** Page the widget was opened on (embedding site), when known. */
+    pageUrl: text("page_url"),
+    messageCount: integer("message_count").notNull().default(0),
+    lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("conversations_bot_last_idx").on(t.tenantId, t.botId, t.lastMessageAt),
+    unique("conversations_id_tenant_uq").on(t.id, t.tenantId),
+    foreignKey({
+      name: "conversations_bot_tenant_fk",
+      columns: [t.botId, t.tenantId],
+      foreignColumns: [bots.id, bots.tenantId],
+    }).onDelete("cascade"),
+  ],
+);
+
+export interface Citation {
+  title: string | null;
+  url: string | null;
+  kind: "page" | "text" | "qa";
+}
+
+export interface MessageFlags {
+  /** The assistant said it couldn't find the answer (knowledge gap). */
+  unanswered?: boolean;
+  /** The model or the fallback chain declined. */
+  refused?: boolean;
+  error?: boolean;
+}
+
+export const messages = pgTable(
+  "messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    conversationId: uuid("conversation_id").notNull(),
+    role: text("role").$type<"user" | "assistant">().notNull(),
+    content: text("content").notNull(),
+    language: text("language"),
+    citations: jsonb("citations").$type<Citation[]>().notNull().default([]),
+    flags: jsonb("flags").$type<MessageFlags>().notNull().default({}),
+    provider: text("provider"),
+    model: text("model"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    cacheReadTokens: integer("cache_read_tokens"),
+    cacheWriteTokens: integer("cache_write_tokens"),
+    /** Cost in micro-USD (1e-6 USD). */
+    costMicros: bigint("cost_micros", { mode: "number" }),
+    latencyMs: integer("latency_ms"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("messages_conversation_idx").on(t.conversationId, t.createdAt),
+    foreignKey({
+      name: "messages_conversation_tenant_fk",
+      columns: [t.conversationId, t.tenantId],
+      foreignColumns: [conversations.id, conversations.tenantId],
+    }).onDelete("cascade"),
+  ],
+);
+
+export const usageEvents = pgTable(
+  "usage_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    botId: uuid("bot_id"),
+    /** e.g. "llm.chat", "llm.aux", "embedding", "crawl.page" */
+    kind: text("kind").notNull(),
+    quantity: integer("quantity").notNull().default(1),
+    costMicros: bigint("cost_micros", { mode: "number" }).notNull().default(0),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("usage_events_tenant_created_idx").on(t.tenantId, t.createdAt)],
+);
+
+// ---------------------------------------------------------------------------------------------
+// Background jobs (platform table, no RLS — workers switch into the job's tenant via withTenant)
+// ---------------------------------------------------------------------------------------------
+
+export const jobStatuses = ["queued", "running", "done", "failed"] as const;
+export type JobStatus = (typeof jobStatuses)[number];
+
+export const jobs = pgTable(
+  "jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    status: text("status").$type<JobStatus>().notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
+    runAt: timestamp("run_at", { withTimezone: true }).notNull().defaultNow(),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    lockedBy: text("locked_by"),
+    lastError: text("last_error"),
+    ...timestamps,
+  },
+  (t) => [index("jobs_ready_idx").on(t.status, t.runAt)],
+);
+
+/** Tables protected by row-level security. Keep in sync with migrations. */
+export const rlsTables = [
+  "bots",
+  "bot_keys",
+  "business_profiles",
+  "audit_logs",
+  "knowledge_sources",
+  "documents",
+  "chunks",
+  "qa_pairs",
+  "conversations",
+  "messages",
+  "usage_events",
+] as const;

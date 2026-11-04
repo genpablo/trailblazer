@@ -223,15 +223,26 @@ Glossaries (dish names, brand names) are handled by passing "do not translate" t
 
 ## 7. Feature scope
 
-### 7.1 Website widget
+### 7.1 Chat surfaces: hosted page, iframe embed, widget
 
-- One-line install: `<script src="https://cdn.<domain>/widget.js" data-bot="pk_live_xxx" async></script>`
-- Shadow DOM (or iframe) isolation; < 50 KB gzipped; lazy-loads on first click
+One chat web app (`apps/chat`) powers every surface. Customers pick what fits their site:
+
+| Surface | How the customer uses it | Good for |
+|---|---|---|
+| **Hosted chat page** | A link `https://<chat-domain>/c/<public-key>` — full-page chat with the business's branding; share it anywhere (website button, Google Business profile, Facebook, email signature, **QR code** on tables/doors/flyers) | Businesses without a website or who can't edit it; restaurants/lodging QR codes |
+| **Inline iframe** | `<iframe src="https://<chat-domain>/c/<public-key>?embed=inline">` placed inside one of their pages (e.g. a "Ask us" page) | Customers who want a full chat page inside their own site |
+| **Floating widget** | `<script src="https://<chat-domain>/widget.js" data-bot="<public-key>" async></script>` — a small loader adds a launcher button that opens the same chat page in an iframe panel | Every page of their site |
+
+- **Isolation:** all three use the chat page; the widget and inline embed are iframes, so the customer's CSS
+  and scripts can't break the chat (and vice versa). Loader script < 5 KB; chat page loads on first open.
+- **Who may embed:** the chat page is served with `Content-Security-Policy: frame-ancestors` built from the
+  bot's allowed origins — only the business's own sites can iframe it. The hosted link can be switched off.
+- **Same origin as the API:** the chat page and its API calls share one origin, so no CORS and no third-party cookies.
 - Streaming, sanitized markdown, sources, quick replies, lead/quote cards, image upload (Phase 2), human handoff
 - **Language switcher**, auto-detect, RTL, CJK/Indic fonts, IME-safe input
 - **WCAG 2.1 AA** (covers Ontario AODA)
-- Branding: colors, logo, avatar, greeting per language, position; hide "Powered by" on paid plans
-- Later: WordPress plugin, Shopify app, Wix/Squarespace/Webflow guides
+- Branding: colors, logo, greeting per language, launcher position; hide "Powered by" on paid plans
+- Later: QR-code generator in admin, WordPress plugin, Shopify app, Wix/Squarespace/Webflow guides
 
 ### 7.2 Client admin portal (EN/FR first)
 
@@ -257,7 +268,7 @@ Glossaries (dish names, brand names) are handled by passing "do not translate" t
 
 ```
                       ┌──────────────────────────────┐
- Visitor's browser ──►│ widget.js (CDN, Shadow DOM)  │       Phone (Phase 3) ──► voice gateway ─┐
+ Visitor's browser ──►│ chat page / iframe / widget  │       Phone (Phase 3) ──► voice gateway ─┐
                       └──────────────┬───────────────┘                                          │
                                      │ HTTPS + SSE                                              │
  Business owner  ──► Admin portal (Next.js) ──┐                                                 │
@@ -282,21 +293,21 @@ Glossaries (dish names, brand names) are handled by passing "do not translate" t
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | Monorepo          | pnpm + Turborepo                                                                                                                               |
 | Admin portal      | Next.js + Tailwind + shadcn/ui + i18n (ICU messages, RTL-ready)                                                                                |
-| Widget            | Preact (or vanilla TS) + Vite library build                                                                                                    |
+| Chat page + widget | Preact + Vite: one chat page (hosted link / iframe) + a tiny `widget.js` loader, served by the API with per-bot `frame-ancestors`              |
 | API               | Fastify (Node), SSE streaming, OpenAPI                                                                                                         |
-| Workers           | Node + BullMQ (Redis) — or managed queue (Inngest/SQS)                                                                                         |
+| Workers           | Postgres-backed job queue (`FOR UPDATE SKIP LOCKED`) in a worker process; move to BullMQ/SQS if volume requires                               |
 | DB                | PostgreSQL 17 + pgvector + full-text (EN/FR) + `pg_trgm`                                                                                       |
 | ORM               | Drizzle                                                                                                                                        |
 | Auth              | Own email/password + session-cookie auth with tenant memberships (built in Phase 0); password reset & email verification in Phase 1; SSO later |
 | Billing           | Stripe (CAD, Canadian sales tax)                                                                                                               |
-| LLM               | Own `LLMProvider` interface; adapters on Vercel AI SDK provider packages + OpenRouter (§9)                                                     |
+| LLM               | Own `LLMProvider` interface; Claude adapter (official Anthropic SDK) + OpenAI-compatible adapter (OpenRouter etc.) + offline test provider (§9) |
 | Translation       | The LLM via the gateway (cheap model); no separate service                                                                                     |
 | Embeddings        | `EmbeddingProvider` interface; strongly multilingual model (Voyage AI, Cohere, OpenAI, Bedrock, Azure, Gemini, local)                          |
 | Parsing           | Readability/Cheerio, `unpdf`/`mammoth`, vision-model OCR for menus, Playwright for JS-heavy sites                                              |
 | Storage / hosting | S3 or R2; Vercel (admin) + Fly.io / Render / AWS ECS (API + workers) + Cloudflare CDN/WAF; Canadian region available for later residency needs |
 | Observability     | Sentry, OpenTelemetry, per-message usage & cost in DB                                                                                          |
 
-> Alternative: Python (FastAPI) backend (LiteLLM instead of the Vercel AI SDK); widget and admin stay TypeScript.
+> Alternative: Python (FastAPI) backend (LiteLLM for the gateway); chat page and admin stay TypeScript.
 
 ### 8.2 Monorepo layout
 
@@ -364,7 +375,9 @@ Gateway: normalize messages/tools/streams/usage; cost from `model_catalog`; rout
 fallbacks (429/5xx/timeouts/refusals); capability checks (vision for menus/images); provider-specific extras
 capability-flagged; platform keys or BYOK; per-provider rate limits & circuit breakers; **evals per model ×
 language** so model choice per plan is measured (language quality differs between models).
-Implementation: own interfaces; adapters on the **Vercel AI SDK** provider packages; native SDK where needed.
+Implementation: own interfaces with two adapters that cover most providers — **Claude** through the official
+Anthropic SDK (direct API now; its Bedrock/Vertex/Foundry clients later) and an **OpenAI-compatible** adapter
+(OpenRouter, OpenAI, Azure OpenAI, Groq, Mistral, Ollama, vLLM). An offline test provider runs without keys.
 
 ### 9.2 Model selection and cost (example: Claude via Anthropic API, per 1M tokens)
 
@@ -449,6 +462,15 @@ public API, AI add-ons (review replies, social posts in multiple languages).
 | **2. Paid launch**                          | ~5 weeks            | Stripe (CAD); Tier 2 reviewed UI strings + evals; owner inbox auto-translation and pre-translated key facts (both via the LLM); catalog feeds (Shopify, Square, CSV); quote requests + image upload; packs: Grocery & market, Brewery & producer, Arts & events, Fitness, Business services, Trades & home services, **Auto repair & service shop**, Small education, Non-profit & settlement; analytics + knowledge gaps; live inbox; WordPress plugin; more LLM adapters (Bedrock, Azure, Vertex, OpenAI-compatible) + BYOK                                                 |
 | **3. Professional (customer service only)** | ~6–8 weeks          | Lawyer-reviewed scope policy & ToS; output check; Canada data residency + PHIPA measures; booking integrations (Jane App, Square, Calendly); minimal intake; packs: Clinic, Pharmacy, Law firm, Accounting & tax, Insurance & financial, Immigration consultant, Real estate, **Car dealership** (vehicle inventory feed); **voice/phone channel** (EN first, then Tier 2); SMS/WhatsApp; agency/white-label                                                                                                                                                                  |
 | **4. Business tier**                        | later               | Internal knowledge assistant (SSO, SharePoint/Drive), RFQ, careers; packs: Mining supply, Engineering, Manufacturing, **Auto manufacturer & parts maker**, Transportation, Utilities, Colleges; public API                                                                                                                                                                                                                                                                                                                                                                    |
+
+**Phase 1 milestones**
+
+| Milestone | Scope |
+|---|---|
+| **1.1 Chat end-to-end** | Knowledge tables + RLS; LLM gateway (Claude via Anthropic SDK, OpenAI-compatible adapter for OpenRouter & others, offline test provider); background jobs; website crawl, text and Q&A sources; full-text + trigram retrieval (vector search when an embedding provider is configured); query translation for non-EN/FR questions; streaming answers with sources; conversation logging + usage metering; **hosted chat page, inline iframe and floating widget**; admin: knowledge sources, playground, share link & embed codes |
+| 1.2 Modules | Lead capture & handoff (tools), hours & "open now", notices, booking/ordering links, age gate, safety escalation; scope guard classifier |
+| 1.3 Content | PDF/DOCX upload, menu photos (vision OCR), auto-filled business profile; pack content for the 7 launch packs |
+| 1.4 Launch readiness | Plan limits & quotas, evals EN/FR + Tier 2 answers, prospect demo generator, QR codes, accessibility pass |
 
 **MVP success criteria:** signup → working bot in under 15 minutes; ≥ 80 % of real visitor questions
 answered correctly in EN and FR and ≥ 75 % in Tier 2 eval languages; 0 scope-policy failures on adversarial

@@ -10,6 +10,8 @@ import { loadUser } from "./plugins/auth.js";
 import { authRoutes } from "./routes/auth.js";
 import { botRoutes } from "./routes/bots.js";
 import { catalogRoutes } from "./routes/catalog.js";
+import { knowledgeRoutes } from "./routes/knowledge.js";
+import { publicRoutes } from "./routes/public.js";
 import { tenantRoutes } from "./routes/tenants.js";
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
@@ -26,7 +28,8 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
     bodyLimit: 1024 * 1024,
   });
 
-  await app.register(helmet, { contentSecurityPolicy: false });
+  // The chat page sets its own CSP with per-bot frame-ancestors, so X-Frame-Options is off globally.
+  await app.register(helmet, { contentSecurityPolicy: false, frameguard: false });
   await app.register(cookie);
   await app.register(rateLimit, { max: 300, timeWindow: "1 minute", enableDraftSpec: true });
 
@@ -62,6 +65,8 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   await app.register(async (scope) => tenantRoutes(scope, ctx));
   await app.register(async (scope) => botRoutes(scope, ctx));
   await app.register(async (scope) => catalogRoutes(scope));
+  await app.register(async (scope) => knowledgeRoutes(scope, ctx));
+  await app.register(async (scope) => publicRoutes(scope, ctx));
 
   return app;
 }

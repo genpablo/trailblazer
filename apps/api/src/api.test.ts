@@ -1,4 +1,5 @@
 import { createDb, type DbHandle, runMigrations, tenants, users } from "@traiblazer/db";
+import { createGatewayFromEnv } from "@traiblazer/llm";
 import { inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -53,7 +54,7 @@ beforeAll(async () => {
   ownerDb = createDb(ownerUrl, { max: 1 });
   appDb = createDb(appUrl, { max: 5 });
   const config = loadConfig({ NODE_ENV: "test", AUTH_RATE_LIMIT_PER_MIN: "1000" } as NodeJS.ProcessEnv);
-  app = await buildApp({ db: appDb.db, config });
+  app = await buildApp({ db: appDb.db, config, gateway: createGatewayFromEnv({}).gateway });
 });
 
 afterAll(async () => {

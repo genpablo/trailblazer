@@ -74,9 +74,54 @@ export const updateBotSchema = z
     languages: languagesList,
     defaultLanguage: languageCode,
     persona: z.string().trim().max(2000).nullable(),
+    hostedPageEnabled: z.boolean(),
+    settings: z
+      .object({
+        color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a hex color like #1f6f5c"),
+        greeting: z.record(z.string(), z.string().trim().max(300)),
+        quickReplies: z.record(z.string(), z.array(z.string().trim().min(1).max(120)).max(6)),
+        launcherPosition: z.enum(["right", "left"]),
+      })
+      .partial(),
   })
   .partial();
 export type UpdateBotInput = z.infer<typeof updateBotSchema>;
+
+// ---- Knowledge -------------------------------------------------------------------------------
+
+export const createSourceSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("website"),
+    url: httpUrl,
+    title: z.string().trim().min(1).max(200).optional(),
+    maxPages: z.number().int().min(1).max(500).optional(),
+  }),
+  z.object({
+    type: z.literal("text"),
+    title: z.string().trim().min(1).max(200),
+    content: z.string().trim().min(1).max(50_000),
+  }),
+]);
+export type CreateSourceInput = z.infer<typeof createSourceSchema>;
+
+export const qaPairSchema = z.object({
+  question: z.string().trim().min(3).max(500),
+  answer: z.string().trim().min(1).max(4000),
+  language: languageCode.optional(),
+});
+export type QaPairInput = z.infer<typeof qaPairSchema>;
+
+// ---- Public chat -----------------------------------------------------------------------------
+
+export const publicChatSchema = z.object({
+  publicKey: z.string().regex(/^pk_(live|test)_[A-Za-z0-9_-]{10,64}$/),
+  conversationId: z.uuid().nullish(),
+  visitorId: z.string().regex(/^[A-Za-z0-9-]{8,64}$/),
+  message: z.string().trim().min(1).max(2000),
+  channel: z.enum(["hosted", "inline", "widget", "playground"]).default("hosted"),
+  pageUrl: z.string().max(2000).nullish(),
+});
+export type PublicChatInput = z.infer<typeof publicChatSchema>;
 
 const timeOfDay = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM (24h)");
 const dayHours = z.array(z.object({ open: timeOfDay, close: timeOfDay })).max(4);

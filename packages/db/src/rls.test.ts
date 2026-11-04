@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type DbHandle, resolveBotKey, withTenant } from "./client.js";
 import { runMigrations } from "./migrator.js";
-import { botKeys, bots, businessProfiles, tenants } from "./schema.js";
+import { botKeys, bots, businessProfiles, rlsTables, tenants } from "./schema.js";
 
 const ownerUrl = process.env.TEST_DATABASE_URL as string;
 const appUrl = process.env.TEST_DATABASE_APP_URL as string;
@@ -114,5 +114,28 @@ describe("row-level security", () => {
 
   it("rejects a non-UUID tenant id", async () => {
     await expect(withTenant(app.db, "' or 1=1 --", async () => 1)).rejects.toThrow(/UUID/);
+  });
+
+  it("enables RLS with a policy on every tenant-owned table", async () => {
+    const rows = await owner.db.execute<{ relname: string; rls: boolean; policies: number }>(sql`
+      select c.relname, c.relrowsecurity as rls,
+             (select count(*)::int from pg_policies p where p.tablename = c.relname) as policies
+      from pg_class c
+      where c.relkind = 'r' and c.relnamespace = 'public'::regnamespace
+        and exists (select 1 from information_schema.columns col
+                    where col.table_name = c.relname and col.column_name = 'tenant_id')
+    `);
+    const platformTables = new Set(["memberships", "jobs"]);
+    for (const row of rows) {
+      if (platformTables.has(row.relname)) continue;
+      expect(row.rls, row.relname).toBe(true);
+      expect(row.policies, row.relname).toBeGreaterThan(0);
+    }
+    expect([...rlsTables].sort()).toEqual(
+      rows
+        .map((r) => r.relname)
+        .filter((n) => !platformTables.has(n))
+        .sort(),
+    );
   });
 });

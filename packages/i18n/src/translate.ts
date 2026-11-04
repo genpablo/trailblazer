@@ -29,7 +29,8 @@ export function t(language: string, key: MessageKey, values?: MessageValues): st
   const cacheKey = `${lang}\u0000${key}`;
   let formatter = cache.get(cacheKey);
   if (!formatter) {
-    formatter = new IntlMessageFormat(template, lang);
+    // ignoreTag: strings may contain literal markup such as "</body>"; we don't use rich-text tags.
+    formatter = new IntlMessageFormat(template, lang, undefined, { ignoreTag: true });
     cache.set(cacheKey, formatter);
   }
   return String(formatter.format(values));

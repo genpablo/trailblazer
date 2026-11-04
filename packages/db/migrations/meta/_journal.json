@@ -15,6 +15,27 @@
       "when": 1793813255213,
       "tag": "0001_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793814439507,
+      "tag": "0002_extensions",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793814486829,
+      "tag": "0003_knowledge_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793814487717,
+      "tag": "0004_knowledge_rls",
+      "breakpoints": true
     }
   ]
 }

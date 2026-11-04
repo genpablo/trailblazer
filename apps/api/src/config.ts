@@ -14,6 +14,12 @@ const envSchema = z.object({
   /** Max sign-up/sign-in attempts per IP per minute. */
   AUTH_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(10),
   LOG_LEVEL: z.string().default("info"),
+  /** Public origin of this service: chat page links, widget script and same-origin checks. */
+  PUBLIC_URL: z.url().default("http://localhost:4000"),
+  /** Admin portal origin; allowed to frame the chat page (playground). */
+  ADMIN_ORIGIN: z.url().default("http://localhost:3000"),
+  /** Max chat messages per IP per minute on the public chat endpoint. */
+  CHAT_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(20),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

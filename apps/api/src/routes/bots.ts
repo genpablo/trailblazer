@@ -92,7 +92,13 @@ export async function botRoutes(app: FastifyInstance, { db, config }: AppContext
         .select()
         .from(botKeys)
         .where(and(eq(botKeys.botId, botId), isNull(botKeys.revokedAt)));
-      return { bot, profile: profile ?? null, keys, pack: getPack(bot.pack) ?? null };
+      return {
+        bot,
+        profile: profile ?? null,
+        keys,
+        pack: getPack(bot.pack) ?? null,
+        chatUrl: config.PUBLIC_URL,
+      };
     });
   });
 
@@ -113,7 +119,13 @@ export async function botRoutes(app: FastifyInstance, { db, config }: AppContext
 
       const [bot] = await tx
         .update(bots)
-        .set({ ...input, languages, defaultLanguage })
+        .set({
+          ...input,
+          languages,
+          defaultLanguage,
+          // Settings are merged so one field can be changed without resending the others.
+          ...(input.settings ? { settings: { ...current.settings, ...input.settings } } : {}),
+        })
         .where(eq(bots.id, botId))
         .returning();
       await audit(tx, {
