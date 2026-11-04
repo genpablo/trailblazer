@@ -43,6 +43,8 @@ export interface Bot {
     assistantName?: string;
     avatar?: { kind: "initials" } | { kind: "icon"; icon: string } | { kind: "image"; assetId: string };
     greeting?: Record<string, string>;
+    /** Per language: owner's questions; an empty list hides suggestions; missing = industry defaults. */
+    quickReplies?: Record<string, string[]>;
     launcherLabel?: string;
     launcherPosition?: "right" | "left";
   };
@@ -53,6 +55,7 @@ export interface BotDetail {
   keys: { id: string; publicKey: string; allowedOrigins: string[] }[];
   profile: { businessName: string | null } | null;
   pack: Pack | null;
+  defaults: { quickReplies: Record<string, string[]> };
   chatUrl: string;
 }
 

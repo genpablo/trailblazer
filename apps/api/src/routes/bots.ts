@@ -1,5 +1,5 @@
 import { assets, botKeys, bots, businessProfiles, tenants, withTenant } from "@traiblazer/db";
-import { getPack, isSelectable } from "@traiblazer/industry-packs";
+import { getPack, getPackGuidance, isSelectable } from "@traiblazer/industry-packs";
 import {
   addAllowedOriginSchema,
   businessProfileSchema,
@@ -103,6 +103,8 @@ export async function botRoutes(app: FastifyInstance, { db, config }: AppContext
         profile: profile ?? null,
         keys,
         pack: getPack(bot.pack) ?? null,
+        // Industry defaults, shown in the admin where the owner hasn't written their own.
+        defaults: { quickReplies: getPackGuidance(bot.pack, bot.variant).quickReplies },
         chatUrl: config.PUBLIC_URL,
       };
     });

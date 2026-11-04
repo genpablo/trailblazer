@@ -443,3 +443,165 @@ describe("appearance", () => {
     await ownerDb.db.delete(users).where(eq(users.email, otherEmail));
   });
 });
+
+describe("suggested questions", () => {
+  const patch = (settings: Record<string, unknown>) =>
+    app.inject({
+      method: "PATCH",
+      url: `/v1/tenants/${tenantId}/bots/${botId}`,
+      headers: { cookie },
+      payload: { settings },
+    });
+  const quickReplies = async () =>
+    (await app.inject({ method: "GET", url: `/v1/public/bots/${publicKey}` })).json().bot.quickReplies;
+
+  it("shows the industry suggestions by default and returns them to the admin", async () => {
+    const detail = await app.inject({
+      method: "GET",
+      url: `/v1/tenants/${tenantId}/bots/${botId}`,
+      headers: { cookie },
+    });
+    const defaults = detail.json().defaults.quickReplies;
+    expect(defaults.en.length).toBeGreaterThan(0);
+    expect((await quickReplies()).en).toEqual(defaults.en);
+  });
+
+  it("uses the owner's questions per language", async () => {
+    expect(
+      (
+        await patch({
+          quickReplies: { en: ["Do you have parking?", "Can I bring my dog?"], ar: ["هل يوجد موقف سيارات؟"] },
+        })
+      ).statusCode,
+    ).toBe(200);
+    const replies = await quickReplies();
+    expect(replies.en).toEqual(["Do you have parking?", "Can I bring my dog?"]);
+    expect(replies.ar).toEqual(["هل يوجد موقف سيارات؟"]);
+    // Languages the owner didn't customize keep the industry suggestions.
+    expect(replies.fr.length).toBeGreaterThan(0);
+  });
+
+  it("can hide suggestions with an empty list", async () => {
+    await patch({ quickReplies: { en: [], fr: [], ar: [] } });
+    const replies = await quickReplies();
+    expect(replies.en).toEqual([]);
+    expect(replies.fr).toEqual([]);
+  });
+
+  it("limits the number and length of questions", async () => {
+    expect(
+      (await patch({ quickReplies: { en: Array.from({ length: 7 }, (_, i) => `Q${i}`) } })).statusCode,
+    ).toBe(400);
+    expect((await patch({ quickReplies: { en: ["x".repeat(121)] } })).statusCode).toBe(400);
+    expect((await patch({ quickReplies: { en: [""] } })).statusCode).toBe(400);
+  });
+});
+
+describe("viewing and editing pasted text", () => {
+  const sourcesUrl = () => `/v1/tenants/${tenantId}/bots/${botId}/sources`;
+
+  it("shows the pasted text and updates it, then answers from the new version", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: sourcesUrl(),
+      headers: { cookie },
+      payload: { type: "text", title: "Winter hours", content: "In winter the sauna opens at 4 pm." },
+    });
+    const id = created.json().source.id as string;
+    await syncSource({ db: appDb.db }, tenantId, id);
+
+    const view = await app.inject({ method: "GET", url: `${sourcesUrl()}/${id}`, headers: { cookie } });
+    expect(view.statusCode).toBe(200);
+    expect(view.json().source).toMatchObject({
+      type: "text",
+      title: "Winter hours",
+      content: "In winter the sauna opens at 4 pm.",
+      status: "ready",
+    });
+
+    const edited = await app.inject({
+      method: "PATCH",
+      url: `${sourcesUrl()}/${id}`,
+      headers: { cookie },
+      payload: { title: "Sauna hours", content: "The sauna is open every evening from 5 pm to 10 pm." },
+    });
+    expect(edited.statusCode).toBe(200);
+    expect(edited.json().source).toMatchObject({ title: "Sauna hours", status: "pending" });
+    // A re-index job was queued for the edited text.
+    const queued = await ownerDb.db.select().from(jobs).where(eq(jobs.tenantId, tenantId));
+    expect(queued.filter((j) => j.payload.sourceId === id && j.status === "queued").length).toBeGreaterThan(
+      0,
+    );
+
+    await syncSource({ db: appDb.db }, tenantId, id);
+    const answer = sse((await chat("When is the sauna open?")).body)
+      .filter((e) => e.type === "text")
+      .map((e) => e.text)
+      .join("");
+    expect(answer).toContain("every evening from 5 pm to 10 pm");
+    expect(answer).not.toContain("4 pm");
+  });
+
+  it("validates edits and only allows editing pasted text", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: sourcesUrl(),
+      headers: { cookie },
+      payload: { type: "text", title: "Notes", content: "Some notes." },
+    });
+    const id = created.json().source.id as string;
+    for (const payload of [{}, { content: "" }, { title: "x".repeat(201) }]) {
+      const res = await app.inject({
+        method: "PATCH",
+        url: `${sourcesUrl()}/${id}`,
+        headers: { cookie },
+        payload,
+      });
+      expect(res.statusCode, JSON.stringify(payload)).toBe(400);
+    }
+
+    const site = await app.inject({
+      method: "POST",
+      url: sourcesUrl(),
+      headers: { cookie },
+      payload: { type: "website", url: "https://harbour-inn.example" },
+    });
+    const siteId = site.json().source.id as string;
+    const res = await app.inject({
+      method: "PATCH",
+      url: `${sourcesUrl()}/${siteId}`,
+      headers: { cookie },
+      payload: { content: "hacked" },
+    });
+    expect(res.statusCode).toBe(400);
+    const view = await app.inject({ method: "GET", url: `${sourcesUrl()}/${siteId}`, headers: { cookie } });
+    expect(view.json()).toMatchObject({ source: { type: "website" }, pages: [] });
+  });
+
+  it("is not visible to other businesses", async () => {
+    const otherEmail = `peek-${crypto.randomUUID().slice(0, 8)}@test.local`;
+    const signup = await app.inject({
+      method: "POST",
+      url: "/v1/auth/signup",
+      payload: { email: otherEmail, password: "correct-horse-battery", name: "Peek" },
+    });
+    const otherCookie = `tb_session=${signup.cookies.find((c) => c.name === "tb_session")!.value}`;
+    const list = await app.inject({ method: "GET", url: sourcesUrl(), headers: { cookie } });
+    const id = list.json().sources[0].id as string;
+    expect(
+      (await app.inject({ method: "GET", url: `${sourcesUrl()}/${id}`, headers: { cookie: otherCookie } }))
+        .statusCode,
+    ).toBe(404);
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: `${sourcesUrl()}/${id}`,
+          headers: { cookie: otherCookie },
+          payload: { content: "nope" },
+        })
+      ).statusCode,
+    ).toBe(404);
+    await ownerDb.db.delete(users).where(eq(users.email, otherEmail));
+  });
+});

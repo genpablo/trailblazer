@@ -127,6 +127,15 @@ export const createSourceSchema = z.discriminatedUnion("type", [
 ]);
 export type CreateSourceInput = z.infer<typeof createSourceSchema>;
 
+export const updateTextSourceSchema = z
+  .object({
+    title: z.string().trim().min(1).max(200),
+    content: z.string().trim().min(1).max(50_000),
+  })
+  .partial()
+  .refine((v) => v.title !== undefined || v.content !== undefined, { message: "Nothing to update" });
+export type UpdateTextSourceInput = z.infer<typeof updateTextSourceSchema>;
+
 export const qaPairSchema = z.object({
   question: z.string().trim().min(3).max(500),
   answer: z.string().trim().min(1).max(4000),

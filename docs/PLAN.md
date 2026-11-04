@@ -248,11 +248,14 @@ One chat web app (`apps/chat`) powers every surface. Customers pick what fits th
 - **Appearance — customizable, but limited** (admin → Appearance, live preview; applies to the web version,
   iframe and widget at once, without changing the install code):
   - *Limited:* one of 5 designed templates — Classic, Minimal, Friendly, Bold, Midnight (dark) — plus a brand
-    color. Text and link colors are derived automatically so any color stays readable (WCAG contrast).
+    color: 12 ready-made colors (Forest, Teal, Lake blue, Navy, Purple, Plum, Raspberry, Red, Orange, Gold,
+    Coffee, Charcoal) or, for advanced users, a custom color (picker or hex code). Text and link colors are
+    derived automatically so any color stays readable (WCAG contrast).
     No custom CSS/HTML, so every chat stays accessible, mobile-friendly and consistent.
   - *Fully customizable:* assistant name (any text/language), picture (uploaded photo/logo — cropped to a square,
     PNG/JPEG/WebP checked by content, SVG refused — or a built-in icon, or initials), greeting per language,
-    launcher button text and side.
+    suggested questions per language (up to 6; industry suggestions by default; can be hidden), launcher
+    button text and side.
   - Later: hide "Powered by" on paid plans; more templates based on customer demand
 - Later: friendly short links (e.g. `/<business-name>`) that survive key rotation, QR scan analytics,
   printable QR flyer templates, WordPress plugin, Shopify app, Wix/Squarespace/Webflow guides

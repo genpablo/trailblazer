@@ -58,6 +58,31 @@ export const themeInfo: ThemeInfo[] = [
 export const DEFAULT_THEME: ThemeId = "classic";
 export const DEFAULT_COLOR = "#1f6f5c";
 
+export interface BrandColorPreset {
+  id: string;
+  color: string;
+  name: Record<"en" | "fr", string>;
+}
+
+/** Ready-made brand colors offered first; any other hex color is available as a custom color. */
+export const BRAND_COLOR_PRESETS: BrandColorPreset[] = [
+  { id: "forest", color: DEFAULT_COLOR, name: { en: "Forest", fr: "Forêt" } },
+  { id: "teal", color: "#0f766e", name: { en: "Teal", fr: "Sarcelle" } },
+  { id: "lake", color: "#1d5fa8", name: { en: "Lake blue", fr: "Bleu lac" } },
+  { id: "navy", color: "#1e3a5f", name: { en: "Navy", fr: "Marine" } },
+  { id: "purple", color: "#6d28d9", name: { en: "Purple", fr: "Violet" } },
+  { id: "plum", color: "#86198f", name: { en: "Plum", fr: "Prune" } },
+  { id: "raspberry", color: "#be185d", name: { en: "Raspberry", fr: "Framboise" } },
+  { id: "red", color: "#b91c1c", name: { en: "Red", fr: "Rouge" } },
+  { id: "orange", color: "#c2410c", name: { en: "Orange", fr: "Orange" } },
+  { id: "gold", color: "#f2b705", name: { en: "Gold", fr: "Or" } },
+  { id: "coffee", color: "#7c4a2d", name: { en: "Coffee", fr: "Café" } },
+  { id: "charcoal", color: "#333333", name: { en: "Charcoal", fr: "Charbon" } },
+];
+
+export const findColorPreset = (color: string | undefined) =>
+  color ? BRAND_COLOR_PRESETS.find((p) => p.color.toLowerCase() === color.toLowerCase()) : undefined;
+
 export const isTheme = (value: unknown): value is ThemeId => THEMES.includes(value as ThemeId);
 
 // ---- Avatar icons ------------------------------------------------------------------------------
@@ -107,13 +132,21 @@ export type PublicAvatar =
   | { kind: "icon"; icon: AvatarIcon }
   | { kind: "image"; url: string };
 
-/** Up to two initials from a name in any script ("Northshore Handyman" → "NH", "李师傅" → "李"). */
+/**
+ * Up to two initials from a name in any script ("Northshore Handyman" → "NH", "李师傅" → "李").
+ * Only letters and digits count, so emoji and symbols are skipped ("Mike 🔧" → "M").
+ */
 export function initialsOf(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return "?";
-  const first = [...words[0]!][0] ?? "";
-  if (words.length === 1 || /[　-鿿가-힯]/.test(first)) return first.toUpperCase();
-  return `${first}${[...words.at(-1)!][0] ?? ""}`.toUpperCase();
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.match(/[\p{L}\p{N}]/u)?.[0])
+    .filter((c): c is string => Boolean(c));
+  if (!initials.length) return "?";
+  const first = initials[0]!;
+  // CJK and Hangul names: one character is the convention.
+  if (initials.length === 1 || /[　-鿿가-힯]/.test(first)) return first.toUpperCase();
+  return `${first}${initials.at(-1)}`.toUpperCase();
 }
 
 // ---- Color & contrast (WCAG 2.1) ---------------------------------------------------------------

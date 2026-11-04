@@ -15,9 +15,13 @@ import { getLanguage } from "@traiblazer/i18n";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { ApiError, api, type BotDetail } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { BrandColorPicker } from "./BrandColorPicker";
 
 type Settings = BotDetail["bot"]["settings"];
 type AvatarKind = "initials" | "icon" | "image";
+
+/** Matches the API limit (shared schema): up to 6 suggested questions per language. */
+const MAX_QUICK_REPLIES = 6;
 
 /** Crops an image file to a centered square and returns base64 (WebP, or PNG if unsupported). */
 async function toSquareImage(file: File, size = 256): Promise<string> {
@@ -171,6 +175,12 @@ export function AppearanceTab({
   const [previewMode, setPreviewMode] = useState<"inline" | "widget">("widget");
   const [avatarKind, setAvatarKind] = useState<AvatarKind>(settings.avatar?.kind ?? "initials");
   const [uploading, setUploading] = useState(false);
+  const [showQuickReplies, setShowQuickReplies] = useState(
+    () =>
+      !bot.languages.every(
+        (code) => Array.isArray(settings.quickReplies?.[code]) && settings.quickReplies[code].length === 0,
+      ),
+  );
   const lang2 = language === "fr" ? "fr" : "en";
   const key = detail.keys[0]?.publicKey;
 
@@ -206,6 +216,9 @@ export function AppearanceTab({
     }
   }
 
+  const defaultQuickReplies = (code: string) =>
+    detail.defaults.quickReplies[code] ?? detail.defaults.quickReplies[code === "fr" ? "fr" : "en"] ?? [];
+
   function saveTexts(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -214,9 +227,24 @@ export function AppearanceTab({
       const value = String(data.get(`greeting.${code}`) ?? "").trim();
       if (value) greeting[code] = value;
     }
+    // Suggested questions: an owner list per language, nothing (= industry defaults), or [] to hide them.
+    const quickReplies: Record<string, string[]> = {};
+    for (const code of bot.languages) {
+      if (!showQuickReplies) {
+        quickReplies[code] = [];
+        continue;
+      }
+      const lines = String(data.get(`quickReplies.${code}`) ?? "")
+        .split("\n")
+        .map((line) => line.trim().slice(0, 120))
+        .filter(Boolean)
+        .slice(0, MAX_QUICK_REPLIES);
+      if (lines.length) quickReplies[code] = lines;
+    }
     void save({
       assistantName: String(data.get("assistantName") ?? ""),
       greeting,
+      quickReplies,
       launcherLabel: String(data.get("launcherLabel") ?? ""),
       launcherPosition: data.get("launcherPosition") === "left" ? "left" : "right",
     });
@@ -250,13 +278,10 @@ export function AppearanceTab({
         </Section>
 
         <Section title={t("appearance.color")} hint={t("appearance.colorHint")}>
-          <input
-            type="color"
-            className="h-10 w-16 cursor-pointer rounded border border-[var(--border)]"
-            defaultValue={color}
-            aria-label={t("appearance.color")}
-            onBlur={(e) => {
-              if (e.target.value !== color) void save({ color: e.target.value });
+          <BrandColorPicker
+            value={color}
+            onChange={(next) => {
+              if (next.toLowerCase() !== color.toLowerCase()) void save({ color: next });
             }}
           />
         </Section>
@@ -370,6 +395,38 @@ export function AppearanceTab({
                 </label>
               );
             })}
+          </fieldset>
+
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-1 text-sm font-medium">{t("appearance.quickReplies")}</legend>
+            <span className="muted text-xs">
+              {t("appearance.quickRepliesHint", { max: MAX_QUICK_REPLIES })}
+            </span>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={showQuickReplies}
+                onChange={(e) => setShowQuickReplies(e.target.checked)}
+              />
+              {t("appearance.quickRepliesShow")}
+            </label>
+            {showQuickReplies &&
+              bot.languages.map((code) => {
+                const lang = getLanguage(code);
+                return (
+                  <label key={code} className="flex flex-col gap-1 text-sm">
+                    <span>{lang?.nativeName ?? code}</span>
+                    <textarea
+                      className="input"
+                      name={`quickReplies.${code}`}
+                      rows={3}
+                      dir={lang?.dir ?? "auto"}
+                      placeholder={defaultQuickReplies(code).join("\n")}
+                      defaultValue={settings.quickReplies?.[code]?.join("\n") ?? ""}
+                    />
+                  </label>
+                );
+              })}
           </fieldset>
 
           <fieldset className="flex flex-col gap-2">

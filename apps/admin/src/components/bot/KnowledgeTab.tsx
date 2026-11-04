@@ -3,6 +3,7 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { ApiError, api, type QaPair, type Source } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { SourceDetail } from "./SourceDetail";
 
 const statusColor: Record<Source["status"], string> = {
   pending: "var(--muted)",
@@ -16,6 +17,7 @@ export function KnowledgeTab({ base }: { base: string }) {
   const [sources, setSources] = useState<Source[] | null>(null);
   const [pairs, setPairs] = useState<QaPair[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [s, q] = await Promise.all([
@@ -69,34 +71,51 @@ export function KnowledgeTab({ base }: { base: string }) {
         ) : (
           <ul className="flex flex-col divide-y divide-[var(--border)]">
             {sources.map((s) => (
-              <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                <div className="min-w-0">
-                  <div className="font-medium">{s.title}</div>
-                  <div className="muted truncate text-xs" dir="ltr">
-                    {s.url ?? t("knowledge.type.text")}
+              <li key={s.id} className="flex flex-col gap-2 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-medium">{s.title}</div>
+                    <div className="muted truncate text-xs" dir="ltr">
+                      {s.url ?? t("knowledge.type.text")}
+                    </div>
+                    {s.error && <div className="error text-xs">{s.error}</div>}
                   </div>
-                  {s.error && <div className="error text-xs">{s.error}</div>}
+                  <div className="flex items-center gap-3 text-sm">
+                    <span style={{ color: statusColor[s.status] }}>{t(`knowledge.status.${s.status}`)}</span>
+                    {s.status === "ready" && (
+                      <span className="muted">{t("knowledge.pages", { count: s.documentCount })}</span>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-ghost py-1"
+                      aria-expanded={openId === s.id}
+                      onClick={() => setOpenId((id) => (id === s.id ? null : s.id))}
+                    >
+                      {s.type === "text" ? t("knowledge.viewEdit") : t("knowledge.view")}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost py-1"
+                      onClick={() => action(`${base}/sources/${s.id}/sync`, "POST")}
+                    >
+                      {t("knowledge.resync")}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost py-1"
+                      onClick={() => action(`${base}/sources/${s.id}`, "DELETE")}
+                    >
+                      {t("common.delete")}
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3 text-sm">
-                  <span style={{ color: statusColor[s.status] }}>{t(`knowledge.status.${s.status}`)}</span>
-                  {s.status === "ready" && (
-                    <span className="muted">{t("knowledge.pages", { count: s.documentCount })}</span>
-                  )}
-                  <button
-                    type="button"
-                    className="btn btn-ghost py-1"
-                    onClick={() => action(`${base}/sources/${s.id}/sync`, "POST")}
-                  >
-                    {t("knowledge.resync")}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost py-1"
-                    onClick={() => action(`${base}/sources/${s.id}`, "DELETE")}
-                  >
-                    {t("common.delete")}
-                  </button>
-                </div>
+                {openId === s.id && (
+                  <SourceDetail
+                    url={`${base}/sources/${s.id}`}
+                    onSaved={load}
+                    onClose={() => setOpenId(null)}
+                  />
+                )}
               </li>
             ))}
           </ul>

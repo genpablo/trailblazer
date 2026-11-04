@@ -1,7 +1,15 @@
 import { isIP } from "node:net";
 import { enqueueJob, JOB_TYPES, tsvectorSql } from "@traiblazer/core";
-import { bots, conversations, knowledgeSources, messages, qaPairs, withTenant } from "@traiblazer/db";
-import { createSourceSchema, qaPairSchema } from "@traiblazer/shared";
+import {
+  bots,
+  conversations,
+  documents,
+  knowledgeSources,
+  messages,
+  qaPairs,
+  withTenant,
+} from "@traiblazer/db";
+import { createSourceSchema, qaPairSchema, updateTextSourceSchema } from "@traiblazer/shared";
 import { and, desc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../context.js";
@@ -94,6 +102,90 @@ export async function knowledgeRoutes(app: FastifyInstance, { db }: AppContext) 
       });
       await enqueueJob(db, { tenantId, type: JOB_TYPES.sourceSync, payload: { sourceId: source.id } });
       return reply.code(201).send({ source });
+    },
+  );
+
+  /** One source with its content: the pasted text, or the list of pages read from a website. */
+  app.get<ItemParams>(
+    `${base}/sources/:itemId`,
+    { preHandler: requireTenantRole(db, "viewer") },
+    async (request) => {
+      const { tenantId, botId, itemId } = request.params;
+      if (!isUuid(itemId)) throw notFound("Source");
+      return forBot(tenantId, botId, async (tx) => {
+        const [source] = await tx
+          .select()
+          .from(knowledgeSources)
+          .where(and(eq(knowledgeSources.id, itemId), eq(knowledgeSources.botId, botId)))
+          .limit(1);
+        if (!source) throw notFound("Source");
+        const pages =
+          source.type === "website"
+            ? await tx
+                .select({ title: documents.title, url: documents.url })
+                .from(documents)
+                .where(eq(documents.sourceId, itemId))
+                .orderBy(documents.url)
+            : [];
+        return {
+          source: {
+            id: source.id,
+            type: source.type,
+            title: source.title,
+            url: source.url,
+            content: source.content,
+            status: source.status,
+            error: source.error,
+            documentCount: source.documentCount,
+            lastSyncedAt: source.lastSyncedAt,
+            updatedAt: source.updatedAt,
+          },
+          pages,
+        };
+      });
+    },
+  );
+
+  /** Edits pasted text (title and/or content) and re-indexes it in the background. */
+  app.patch<ItemParams>(
+    `${base}/sources/:itemId`,
+    { preHandler: requireTenantRole(db, "editor") },
+    async (request) => {
+      const { tenantId, botId, itemId } = request.params;
+      if (!isUuid(itemId)) throw notFound("Source");
+      const input = updateTextSourceSchema.parse(request.body);
+      const source = await forBot(tenantId, botId, async (tx) => {
+        const [current] = await tx
+          .select({ type: knowledgeSources.type })
+          .from(knowledgeSources)
+          .where(and(eq(knowledgeSources.id, itemId), eq(knowledgeSources.botId, botId)))
+          .limit(1);
+        if (!current) throw notFound("Source");
+        if (current.type !== "text")
+          throw badRequest("Only pasted text can be edited. Refresh websites instead.");
+        const [row] = await tx
+          .update(knowledgeSources)
+          .set({ ...input, status: "pending", error: null })
+          .where(eq(knowledgeSources.id, itemId))
+          .returning({
+            id: knowledgeSources.id,
+            type: knowledgeSources.type,
+            title: knowledgeSources.title,
+            content: knowledgeSources.content,
+            status: knowledgeSources.status,
+          });
+        await audit(tx, {
+          tenantId,
+          actorUserId: request.user!.id,
+          action: "source.updated",
+          targetType: "knowledge_source",
+          targetId: itemId,
+          metadata: { fields: Object.keys(input) },
+        });
+        return row!;
+      });
+      await enqueueJob(db, { tenantId, type: JOB_TYPES.sourceSync, payload: { sourceId: itemId } });
+      return { source };
     },
   );
 
