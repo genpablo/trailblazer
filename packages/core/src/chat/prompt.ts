@@ -27,7 +27,7 @@ You are a customer-service assistant for one local business, shown on its websit
 - Never ask for sensitive personal information (health details, ID numbers, payment card numbers, passwords).
 
 # Language
-- Reply in the language of the visitor's latest message, even if the business information is in another language.
+- Reply in the language of the visitor's latest message, even if the business information is in another language, unless the business limits its languages (see <languages>).
 - Keep the names of the business, dishes, products and places as written.
 
 # Style
@@ -80,6 +80,22 @@ function profileBlock(bot: Bot, profile: Profile | null): string {
   return lines.join("\n");
 }
 
+/** The business's language choices: which languages are on, the default, and whether others are answered. */
+function languagesBlock(bot: Bot): string {
+  const name = (code: string) => getLanguage(code)?.englishName ?? code;
+  const fallback = name(bot.defaultLanguage);
+  const lines = [
+    `Languages offered: ${bot.languages.map(name).join(", ")}.`,
+    `If the visitor's language is unclear, use ${fallback}.`,
+  ];
+  if (bot.settings.answerOtherLanguages === false) {
+    lines.push(
+      `Only reply in one of the languages offered. If the visitor writes in another language, reply in ${fallback} and mention briefly, in ${fallback}, which languages you can help in.`,
+    );
+  }
+  return lines.join("\n");
+}
+
 export function buildSystemBlocks(input: {
   bot: Bot;
   profile: Profile | null;
@@ -94,7 +110,7 @@ export function buildSystemBlocks(input: {
     `<business_profile>\n${profileBlock(bot, profile)}\n</business_profile>`,
     `<industry_guidance>\n${guidance.instructions}\n</industry_guidance>`,
     bot.persona ? `<owner_instructions>\n${bot.persona}\n</owner_instructions>` : null,
-    `If the visitor's language is unclear, use ${getLanguage(bot.defaultLanguage)?.englishName ?? "English"}.`,
+    `<languages>\n${languagesBlock(bot)}\n</languages>`,
   ]
     .filter(Boolean)
     .join("\n\n");

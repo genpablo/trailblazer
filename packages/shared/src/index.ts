@@ -97,6 +97,8 @@ export const updateBotSchema = z
         quickReplies: z.record(z.string(), z.array(z.string().trim().min(1).max(120)).max(6)),
         launcherLabel: z.string().trim().max(30),
         launcherPosition: z.enum(["right", "left"]),
+        // Languages: answer visitors in languages that aren't turned on (default) or not.
+        answerOtherLanguages: z.boolean(),
       })
       .partial(),
   })

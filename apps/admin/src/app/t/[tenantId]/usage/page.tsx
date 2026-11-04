@@ -174,7 +174,7 @@ function LimitsForm({
         </button>
         {saved && (
           <span className="text-sm" role="status">
-            {t("appearance.saved")}
+            {t("common.saved")}
           </span>
         )}
       </div>

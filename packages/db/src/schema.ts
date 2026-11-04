@@ -207,6 +207,11 @@ export interface BotSettings {
   /** Optional text next to the widget's launcher button. */
   launcherLabel?: string;
   launcherPosition?: "right" | "left";
+  /**
+   * Answer visitors who write in a language the owner hasn't turned on (default true). When false,
+   * those visitors get answers in the default language.
+   */
+  answerOtherLanguages?: boolean;
 }
 
 export const botStatuses = ["draft", "active", "paused"] as const;

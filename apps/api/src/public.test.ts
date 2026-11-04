@@ -605,3 +605,42 @@ describe("viewing and editing pasted text", () => {
     await ownerDb.db.delete(users).where(eq(users.email, otherEmail));
   });
 });
+
+describe("general settings: languages", () => {
+  const patch = (body: Record<string, unknown>) =>
+    app.inject({
+      method: "PATCH",
+      url: `/v1/tenants/${tenantId}/bots/${botId}`,
+      headers: { cookie },
+      payload: body,
+    });
+  const publicConfig = async () =>
+    (await app.inject({ method: "GET", url: `/v1/public/bots/${publicKey}` })).json().bot;
+
+  it("turns languages on and off, keeping the default among them", async () => {
+    const before = await publicConfig();
+    const res = await patch({
+      languages: ["en", "uk", "ar"],
+      defaultLanguage: "uk",
+      settings: { answerOtherLanguages: false },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().bot.settings.answerOtherLanguages).toBe(false);
+    const config = await publicConfig();
+    expect(config.defaultLanguage).toBe("uk");
+    expect(config.languages.map((l: { code: string }) => l.code)).toEqual(["en", "uk", "ar"]);
+    expect(config.languages.find((l: { code: string }) => l.code === "ar").dir).toBe("rtl");
+
+    // The default language must be one of the languages turned on, and at least one must stay on.
+    expect((await patch({ languages: ["en"], defaultLanguage: "uk" })).statusCode).toBe(400);
+    expect((await patch({ languages: ["en"] })).statusCode).toBe(400);
+    expect((await patch({ languages: [] })).statusCode).toBe(400);
+    expect((await patch({ settings: { answerOtherLanguages: "yes" } })).statusCode).toBe(400);
+
+    await patch({
+      languages: before.languages.map((l: { code: string }) => l.code),
+      defaultLanguage: before.defaultLanguage,
+      settings: { answerOtherLanguages: true },
+    });
+  });
+});

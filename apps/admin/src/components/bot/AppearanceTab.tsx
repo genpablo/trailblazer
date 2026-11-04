@@ -11,17 +11,13 @@ import {
   type ThemeId,
   themeInfo,
 } from "@traiblazer/appearance";
-import { getLanguage } from "@traiblazer/i18n";
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { ApiError, api, type BotDetail } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { BrandColorPicker } from "./BrandColorPicker";
 
 type Settings = BotDetail["bot"]["settings"];
 type AvatarKind = "initials" | "icon" | "image";
-
-/** Matches the API limit (shared schema): up to 6 suggested questions per language. */
-const MAX_QUICK_REPLIES = 6;
 
 /** Crops an image file to a centered square and returns base64 (WebP, or PNG if unsupported). */
 async function toSquareImage(file: File, size = 256): Promise<string> {
@@ -175,12 +171,6 @@ export function AppearanceTab({
   const [previewMode, setPreviewMode] = useState<"inline" | "widget">("widget");
   const [avatarKind, setAvatarKind] = useState<AvatarKind>(settings.avatar?.kind ?? "initials");
   const [uploading, setUploading] = useState(false);
-  const [showQuickReplies, setShowQuickReplies] = useState(
-    () =>
-      !bot.languages.every(
-        (code) => Array.isArray(settings.quickReplies?.[code]) && settings.quickReplies[code].length === 0,
-      ),
-  );
   const lang2 = language === "fr" ? "fr" : "en";
   const key = detail.keys[0]?.publicKey;
 
@@ -214,40 +204,6 @@ export function AppearanceTab({
     } finally {
       setUploading(false);
     }
-  }
-
-  const defaultQuickReplies = (code: string) =>
-    detail.defaults.quickReplies[code] ?? detail.defaults.quickReplies[code === "fr" ? "fr" : "en"] ?? [];
-
-  function saveTexts(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const greeting: Record<string, string> = {};
-    for (const code of bot.languages) {
-      const value = String(data.get(`greeting.${code}`) ?? "").trim();
-      if (value) greeting[code] = value;
-    }
-    // Suggested questions: an owner list per language, nothing (= industry defaults), or [] to hide them.
-    const quickReplies: Record<string, string[]> = {};
-    for (const code of bot.languages) {
-      if (!showQuickReplies) {
-        quickReplies[code] = [];
-        continue;
-      }
-      const lines = String(data.get(`quickReplies.${code}`) ?? "")
-        .split("\n")
-        .map((line) => line.trim().slice(0, 120))
-        .filter(Boolean)
-        .slice(0, MAX_QUICK_REPLIES);
-      if (lines.length) quickReplies[code] = lines;
-    }
-    void save({
-      assistantName: String(data.get("assistantName") ?? ""),
-      greeting,
-      quickReplies,
-      launcherLabel: String(data.get("launcherLabel") ?? ""),
-      launcherPosition: data.get("launcherPosition") === "left" ? "left" : "right",
-    });
   }
 
   const displayName = settings.assistantName?.trim() || businessName;
@@ -362,112 +318,28 @@ export function AppearanceTab({
           </fieldset>
         </Section>
 
-        <form className="flex flex-col gap-6" onSubmit={saveTexts} key={JSON.stringify(settings)}>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">{t("appearance.name")}</span>
-            <input
-              className="input max-w-sm"
-              name="assistantName"
-              maxLength={40}
-              defaultValue={settings.assistantName ?? ""}
-              placeholder={businessName}
-              dir="auto"
-            />
-            <span className="muted text-xs">{t("appearance.nameHint")}</span>
-          </label>
-
-          <fieldset className="flex flex-col gap-2">
-            <legend className="mb-1 text-sm font-medium">{t("appearance.greeting")}</legend>
-            <span className="muted text-xs">{t("appearance.greetingHint")}</span>
-            {bot.languages.map((code) => {
-              const lang = getLanguage(code);
-              return (
-                <label key={code} className="flex flex-col gap-1 text-sm">
-                  <span>{lang?.nativeName ?? code}</span>
-                  <textarea
-                    className="input"
-                    name={`greeting.${code}`}
-                    rows={2}
-                    maxLength={300}
-                    dir={lang?.dir ?? "auto"}
-                    defaultValue={settings.greeting?.[code] ?? ""}
-                  />
-                </label>
-              );
-            })}
-          </fieldset>
-
-          <fieldset className="flex flex-col gap-2">
-            <legend className="mb-1 text-sm font-medium">{t("appearance.quickReplies")}</legend>
-            <span className="muted text-xs">
-              {t("appearance.quickRepliesHint", { max: MAX_QUICK_REPLIES })}
-            </span>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={showQuickReplies}
-                onChange={(e) => setShowQuickReplies(e.target.checked)}
-              />
-              {t("appearance.quickRepliesShow")}
-            </label>
-            {showQuickReplies &&
-              bot.languages.map((code) => {
-                const lang = getLanguage(code);
-                return (
-                  <label key={code} className="flex flex-col gap-1 text-sm">
-                    <span>{lang?.nativeName ?? code}</span>
-                    <textarea
-                      className="input"
-                      name={`quickReplies.${code}`}
-                      rows={3}
-                      dir={lang?.dir ?? "auto"}
-                      placeholder={defaultQuickReplies(code).join("\n")}
-                      defaultValue={settings.quickReplies?.[code]?.join("\n") ?? ""}
-                    />
-                  </label>
-                );
-              })}
-          </fieldset>
-
-          <fieldset className="flex flex-col gap-2">
-            <legend className="mb-1 text-sm font-medium">{t("appearance.launcher")}</legend>
-            <label className="flex flex-col gap-1 text-sm">
-              {t("appearance.launcherLabel")}
-              <input
-                className="input max-w-xs"
-                name="launcherLabel"
-                maxLength={30}
-                defaultValue={settings.launcherLabel ?? ""}
-                dir="auto"
-              />
-              <span className="muted text-xs">{t("appearance.launcherLabelHint")}</span>
-            </label>
-            <div className="flex gap-4 text-sm" role="radiogroup" aria-label={t("appearance.position")}>
-              {(["right", "left"] as const).map((pos) => (
-                <label key={pos} className="flex items-center gap-1">
-                  <input
-                    type="radio"
-                    name="launcherPosition"
-                    value={pos}
-                    defaultChecked={(settings.launcherPosition ?? "right") === pos}
-                  />
-                  {t(`appearance.position.${pos}`)}
-                </label>
-              ))}
-            </div>
-          </fieldset>
-
-          <div className="flex items-center gap-3">
-            <button className="btn" type="submit">
-              {t("common.save")}
-            </button>
-            {saved && (
-              <span className="text-sm" role="status" style={{ color: "var(--accent)" }}>
-                {t("appearance.saved")}
-              </span>
-            )}
+        <Section title={t("appearance.launcher")}>
+          <div className="flex gap-4 text-sm" role="radiogroup" aria-label={t("appearance.position")}>
+            {(["right", "left"] as const).map((pos) => (
+              <label key={pos} className="flex items-center gap-1">
+                <input
+                  type="radio"
+                  name="launcherPosition"
+                  value={pos}
+                  checked={(settings.launcherPosition ?? "right") === pos}
+                  onChange={() => void save({ launcherPosition: pos })}
+                />
+                {t(`appearance.position.${pos}`)}
+              </label>
+            ))}
           </div>
-        </form>
+        </Section>
+
+        {saved && (
+          <p className="text-sm" role="status" style={{ color: "var(--accent)" }}>
+            {t("common.saved")}
+          </p>
+        )}
 
         {error && (
           <p className="error text-sm" role="alert">

@@ -245,17 +245,25 @@ One chat web app (`apps/chat`) powers every surface. Customers pick what fits th
 - Streaming, sanitized markdown, sources, quick replies, lead/quote cards, image upload (Phase 2), human handoff
 - **Language switcher**, auto-detect, RTL, CJK/Indic fonts, IME-safe input
 - **WCAG 2.1 AA** (covers Ontario AODA)
-- **Appearance — customizable, but limited** (admin → Appearance, live preview; applies to the web version,
-  iframe and widget at once, without changing the install code):
+- **Settings are split in two tabs**, both applying to the web version, iframe and widget at once without
+  changing the install code: **General** (names, languages, and the texts visitors see) and **Appearance**
+  (visual design only, with a live preview).
+- **General:** assistant name shown to visitors and the name in the dashboard; **languages** — the owner turns
+  on the languages their customers use (grouped as full support, newcomer languages with translated chat
+  buttons, and more languages with translated answers), picks the default language, and chooses whether the
+  assistant also answers visitors writing in other languages (on by default; when off, those visitors get
+  answers in the default language); greeting and suggested questions per enabled language; launcher button
+  text. Texts for a language that's turned off are kept for when it's turned back on.
+- **Appearance — customizable, but limited:**
   - *Limited:* one of 5 designed templates — Classic, Minimal, Friendly, Bold, Midnight (dark) — plus a brand
     color: 12 ready-made colors (Forest, Teal, Lake blue, Navy, Purple, Plum, Raspberry, Red, Orange, Gold,
     Coffee, Charcoal) or, for advanced users, a custom color (picker or hex code). Text and link colors are
     derived automatically so any color stays readable (WCAG contrast).
     No custom CSS/HTML, so every chat stays accessible, mobile-friendly and consistent.
-  - *Fully customizable:* assistant name (any text/language), picture (uploaded photo/logo — cropped to a square,
-    PNG/JPEG/WebP checked by content, SVG refused — or a built-in icon, or initials), greeting per language,
-    suggested questions per language (up to 6; industry suggestions by default; can be hidden), launcher
-    button text and side.
+  - *Fully customizable:* picture (uploaded photo/logo — cropped to a square, PNG/JPEG/WebP checked by content,
+    SVG refused — or a built-in icon, or initials) and the launcher button's side. (Name, greeting, suggested
+    questions — up to 6 per language, industry suggestions by default, can be hidden — and launcher text are in
+    General.)
   - Later: hide "Powered by" on paid plans; more templates based on customer demand
 - Later: friendly short links (e.g. `/<business-name>`) that survive key rotation, QR scan analytics,
   printable QR flyer templates, WordPress plugin, Shopify app, Wix/Squarespace/Webflow guides

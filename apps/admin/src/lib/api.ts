@@ -48,6 +48,8 @@ export interface Bot {
     quickReplies?: Record<string, string[]>;
     launcherLabel?: string;
     launcherPosition?: "right" | "left";
+    /** Answer visitors in languages that aren't turned on (default true). */
+    answerOtherLanguages?: boolean;
   };
 }
 
