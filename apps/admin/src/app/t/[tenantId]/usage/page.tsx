@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { SupportBanner } from "@/components/SupportBanner";
 import { DailyChart, type DailyPoint } from "@/components/usage/DailyChart";
 import { ApiError, api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
@@ -221,6 +222,7 @@ export default function UsagePage() {
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-6">
+      <SupportBanner tenantId={tenantId} />
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <Link href="/dashboard" className="muted text-sm underline-offset-4 hover:underline">

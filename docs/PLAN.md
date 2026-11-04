@@ -275,13 +275,21 @@ One chat web app (`apps/chat`) powers every surface. Customers pick what fits th
 
 ### 7.3 Operator console
 
-- **Delivered (`/operator` in the admin app, staff only):** overview (businesses, assistants, questions,
-  refusals, AI cost this month); businesses (search, change plan, suspend/reactivate, usage and cost per
-  business); plans (create, edit allowances and prices, archive); platform policies (default plan for new
-  businesses, released industry phase, per-visitor/per-conversation/per-IP limits); audit trail of every change.
-  Plans and policies live in the database and apply within 30 seconds. Operator access is granted only from
-  the command line (`pnpm --filter @traiblazer/api operator grant <email>`), never through the API.
-- Later: audited impersonation
+- **Delivered (`/operator` in the admin app):** overview (businesses, assistants, questions,
+  refusals, AI cost this month); businesses (search, change plan, suspend/reactivate, usage and cost, members
+  and assistants); all users and their businesses; plans (create, edit allowances and prices, archive);
+  platform policies (default plan for new businesses, released industry phase, per-visitor/per-conversation/
+  per-IP limits); audit trail of every change. Plans and policies live in the database and apply within 30
+  seconds.
+- **Super admin role, staff accounts only:** a platform role on dedicated Traiblazer accounts that can never
+  belong to a business (enforced in the database), granted only from the command line
+  (`pnpm --filter @traiblazer/api superadmin grant <email>`), never through the API. Business users can't
+  reach the console (404) and never see it.
+- **Support access:** super admins can open any business's assistants and usage pages and change settings as
+  an admin, with a "Support mode" banner; every change is written to the business's own audit log and the
+  operator audit log.
+- Later: a support role with narrower rights (view-only or no plan/policy changes), and showing the business
+  its activity log in the admin portal
 - Packs/variants/modules (versioned) with eval results per language
 - **Prospect demo generator:** build a private demo bot from a prospect's public website
 - System health: ingestion queue, errors, latency, provider fallbacks, scope-classifier triggers

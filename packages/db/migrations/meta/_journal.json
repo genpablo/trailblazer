@@ -85,6 +85,20 @@
       "when": 1793830569020,
       "tag": "0011_operator_console",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793831585416,
+      "tag": "0012_super_admin_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793831591978,
+      "tag": "0013_drop_is_operator",
+      "breakpoints": true
     }
   ]
 }

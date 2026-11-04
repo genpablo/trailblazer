@@ -8,11 +8,13 @@ import { BusinessesTab } from "@/components/operator/BusinessesTab";
 import { OverviewTab } from "@/components/operator/OverviewTab";
 import { PlansTab } from "@/components/operator/PlansTab";
 import { PoliciesTab } from "@/components/operator/PoliciesTab";
+import { UsersTab } from "@/components/operator/UsersTab";
 import { ApiError, api, type Me } from "@/lib/api";
 
 const TABS = [
   { id: "overview", label: "Overview" },
   { id: "businesses", label: "Businesses" },
+  { id: "users", label: "Users" },
   { id: "plans", label: "Plans" },
   { id: "policies", label: "Policies" },
   { id: "activity", label: "Activity" },
@@ -20,20 +22,36 @@ const TABS = [
 type Tab = (typeof TABS)[number]["id"];
 
 /**
- * Operator console for Traiblazer staff: plans, platform policies, businesses and an audit
- * trail. Internal tool, so English only. Access is checked by the API (non-operators get 404).
+ * Operator console for Traiblazer staff (super admins): businesses, users, plans, platform
+ * policies and an audit trail. Staff use dedicated accounts that never belong to a business, and
+ * the API returns 404 to everyone else. Internal tool, so English only.
  */
 export default function OperatorPage() {
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "denied">("loading");
   const [tab, setTab] = useState<Tab>("overview");
+  const [business, setBusiness] = useState<string | null>(null);
+
+  // "Back to operator console" from a business's pages reopens that business.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("business");
+    if (id) {
+      setBusiness(id);
+      setTab("businesses");
+    }
+  }, []);
+
+  async function signOut() {
+    await api("/v1/auth/logout", { method: "POST" });
+    router.replace("/login");
+  }
 
   useEffect(() => {
     api<Me>("/v1/auth/me")
       .then((data) => {
         setMe(data);
-        setState(data.user.isOperator ? "ready" : "denied");
+        setState(data.user.platformRole === "super_admin" ? "ready" : "denied");
       })
       .catch((err) => {
         if (err instanceof ApiError && err.status === 401) router.replace("/login");
@@ -57,9 +75,6 @@ export default function OperatorPage() {
     <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6" lang="en">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <Link href="/dashboard" className="muted text-sm">
-            ← Dashboard
-          </Link>
           <h1 className="flex items-center gap-2 text-xl font-semibold">
             Operator console
             <span className="rounded-full border border-[var(--border)] px-2 py-0.5 text-xs font-medium">
@@ -67,7 +82,12 @@ export default function OperatorPage() {
             </span>
           </h1>
         </div>
-        <span className="muted text-sm">Signed in as {me?.user.email}</span>
+        <div className="flex items-center gap-3">
+          <span className="muted text-sm">Signed in as {me?.user.email}</span>
+          <button className="btn btn-ghost" type="button" onClick={signOut}>
+            Sign out
+          </button>
+        </div>
       </header>
 
       <div role="tablist" className="flex flex-wrap gap-1 border-b border-[var(--border)]">
@@ -87,7 +107,15 @@ export default function OperatorPage() {
 
       <section role="tabpanel">
         {tab === "overview" && <OverviewTab />}
-        {tab === "businesses" && <BusinessesTab />}
+        {tab === "businesses" && <BusinessesTab selected={business} onSelect={setBusiness} />}
+        {tab === "users" && (
+          <UsersTab
+            onOpenBusiness={(id) => {
+              setBusiness(id);
+              setTab("businesses");
+            }}
+          />
+        )}
         {tab === "plans" && <PlansTab />}
         {tab === "policies" && <PoliciesTab />}
         {tab === "activity" && <ActivityTab />}

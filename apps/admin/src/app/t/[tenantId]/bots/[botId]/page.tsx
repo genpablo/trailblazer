@@ -8,6 +8,7 @@ import { ConversationsTab } from "@/components/bot/ConversationsTab";
 import { KnowledgeTab } from "@/components/bot/KnowledgeTab";
 import { ShareTab } from "@/components/bot/ShareTab";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { SupportBanner } from "@/components/SupportBanner";
 import { ApiError, api, type BotDetail } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
@@ -46,6 +47,7 @@ export default function BotPage() {
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-6">
+      <SupportBanner tenantId={tenantId} />
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <Link href="/dashboard" className="muted text-sm underline-offset-4 hover:underline">

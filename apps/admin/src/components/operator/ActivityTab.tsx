@@ -9,6 +9,7 @@ const ACTION_LABELS: Record<string, string> = {
   "plan.updated": "Edited plan",
   "tenant.updated": "Changed business",
   "policies.updated": "Changed policies",
+  "support.change": "Support change",
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -40,6 +41,9 @@ function describe(entry: AuditEntry): string[] {
     const from = (m.from ?? {}) as Record<string, unknown>;
     const to = (m.to ?? {}) as Record<string, unknown>;
     return Object.keys(to).map((k) => `${label(k)}: ${show(from[k])} → ${show(to[k])}`);
+  }
+  if (entry.action === "support.change") {
+    return [`${show(m.method)} ${show(m.route)}`];
   }
   if (entry.action === "plan.created") {
     return [`${show(m.nameEn)}: ${show(m.monthlyQuestions)} questions/mo`];

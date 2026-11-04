@@ -1,4 +1,15 @@
-import { memberships, operatorAuditLogs, plans, platformSettings, tenants, users } from "@traiblazer/db";
+import {
+  bots,
+  conversations,
+  knowledgeSources,
+  memberships,
+  operatorAuditLogs,
+  plans,
+  platformSettings,
+  tenants,
+  users,
+  withTenant,
+} from "@traiblazer/db";
 import {
   createPlanSchema,
   effectiveMonthlyLimit,
@@ -13,17 +24,14 @@ import { desc, eq, sql } from "drizzle-orm";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { AppContext } from "../context.js";
 import { periodKey } from "../lib/chat-guard.js";
-import { badRequest, conflict, notFound, unauthorized } from "../lib/errors.js";
+import { badRequest, conflict, notFound } from "../lib/errors.js";
 import { isUuid } from "../lib/ids.js";
+import { requireSuperAdmin } from "../plugins/auth.js";
 
 /**
- * Operator console API (Traiblazer staff only): plans, platform policies, businesses and the
- * operator audit log. Non-operators get 404 so the console's existence isn't revealed.
+ * Operator console API (Traiblazer super admins only): businesses, users, plans, platform policies
+ * and the operator audit log. Everyone else gets 404 so the console's existence isn't revealed.
  */
-export async function requireOperator(request: FastifyRequest): Promise<void> {
-  if (!request.user) throw unauthorized();
-  if (!request.user.isOperator) throw notFound("Page");
-}
 
 type IdParams = { Params: { id: string } };
 
@@ -37,7 +45,7 @@ interface TenantStatsRow extends Record<string, unknown> {
 }
 
 export async function operatorRoutes(app: FastifyInstance, { db, platform }: AppContext) {
-  const guard = { preHandler: requireOperator };
+  const guard = { preHandler: requireSuperAdmin };
   const tz = REPORTING_TIME_ZONE;
 
   const stats = async () =>
@@ -128,6 +136,57 @@ export async function operatorRoutes(app: FastifyInstance, { db, platform }: App
     };
   });
 
+  /** One business: members and assistants, so staff can see what the owner sees and help. */
+  app.get<IdParams>("/v1/operator/tenants/:id", guard, async (request) => {
+    const { id } = request.params;
+    if (!isUuid(id)) throw notFound("Business");
+    const [tenant] = await db.select().from(tenants).where(eq(tenants.id, id)).limit(1);
+    if (!tenant) throw notFound("Business");
+    const members = await db
+      .select({ userId: users.id, name: users.name, email: users.email, role: memberships.role })
+      .from(memberships)
+      .innerJoin(users, eq(users.id, memberships.userId))
+      .where(eq(memberships.tenantId, id))
+      .orderBy(users.email);
+    const assistants = await withTenant(db, id, async (tx) => {
+      const [botRows, sourceCounts, conversationCounts] = await Promise.all([
+        tx.select().from(bots).orderBy(bots.name),
+        tx
+          .select({ botId: knowledgeSources.botId, count: sql<number>`count(*)::int` })
+          .from(knowledgeSources)
+          .groupBy(knowledgeSources.botId),
+        tx
+          .select({ botId: conversations.botId, count: sql<number>`count(*)::int` })
+          .from(conversations)
+          .where(sql`${conversations.createdAt} >= now() - interval '30 days'`)
+          .groupBy(conversations.botId),
+      ]);
+      const sourcesBy = new Map(sourceCounts.map((r) => [r.botId, r.count]));
+      const conversationsBy = new Map(conversationCounts.map((r) => [r.botId, r.count]));
+      return botRows.map((b) => ({
+        id: b.id,
+        name: b.name,
+        pack: b.pack,
+        status: b.status,
+        languages: b.languages,
+        hostedPageEnabled: b.hostedPageEnabled,
+        sources: sourcesBy.get(b.id) ?? 0,
+        conversations30d: conversationsBy.get(b.id) ?? 0,
+      }));
+    });
+    return {
+      tenant: {
+        id: tenant.id,
+        name: tenant.name,
+        plan: tenant.plan,
+        status: tenant.status,
+        createdAt: tenant.createdAt,
+      },
+      members,
+      assistants,
+    };
+  });
+
   app.patch<IdParams>("/v1/operator/tenants/:id", guard, async (request) => {
     const { id } = request.params;
     if (!isUuid(id)) throw notFound("Business");
@@ -144,6 +203,51 @@ export async function operatorRoutes(app: FastifyInstance, { db, platform }: App
       to: input,
     });
     return { tenant: { id: updated!.id, plan: updated!.plan, status: updated!.status } };
+  });
+
+  // ---- Users ----------------------------------------------------------------------------------
+
+  app.get<{ Querystring: { q?: string } }>("/v1/operator/users", guard, async (request) => {
+    const q = (request.query.q ?? "").trim().toLowerCase();
+    const [userRows, memberRows] = await Promise.all([
+      db
+        .select({
+          id: users.id,
+          email: users.email,
+          name: users.name,
+          platformRole: users.platformRole,
+          createdAt: users.createdAt,
+        })
+        .from(users)
+        .orderBy(desc(users.createdAt)),
+      db
+        .select({
+          userId: memberships.userId,
+          tenantId: tenants.id,
+          tenantName: tenants.name,
+          role: memberships.role,
+        })
+        .from(memberships)
+        .innerJoin(tenants, eq(tenants.id, memberships.tenantId)),
+    ]);
+    const businessesBy = new Map<string, { id: string; name: string; role: string }[]>();
+    for (const m of memberRows) {
+      businessesBy.set(m.userId, [
+        ...(businessesBy.get(m.userId) ?? []),
+        { id: m.tenantId, name: m.tenantName, role: m.role },
+      ]);
+    }
+    return {
+      users: userRows
+        .map((u) => ({ ...u, businesses: businessesBy.get(u.id) ?? [] }))
+        .filter(
+          (u) =>
+            !q ||
+            u.email.includes(q) ||
+            u.name.toLowerCase().includes(q) ||
+            u.businesses.some((b) => b.name.toLowerCase().includes(q)),
+        ),
+    };
   });
 
   // ---- Plans --------------------------------------------------------------------------------

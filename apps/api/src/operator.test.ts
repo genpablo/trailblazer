@@ -2,8 +2,10 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  auditLogs,
   createDb,
   type DbHandle,
+  memberships,
   operatorAuditLogs,
   plans,
   platformSettings,
@@ -12,7 +14,7 @@ import {
   users,
 } from "@traiblazer/db";
 import { createGatewayFromEnv } from "@traiblazer/llm";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "./app.js";
@@ -31,6 +33,7 @@ let ownerCookie: string;
 let operatorId: string;
 let tenantId: string;
 let publicKey: string;
+let botId: string;
 const emails: string[] = [];
 const tenantIds: string[] = [];
 let savedSettings: (typeof platformSettings.$inferSelect)[] = [];
@@ -88,7 +91,7 @@ beforeAll(async () => {
   const operator = await signup("operator");
   operatorCookie = operator.cookie;
   operatorId = operator.id;
-  await ownerDb.db.update(users).set({ isOperator: true }).where(eq(users.id, operatorId));
+  await ownerDb.db.update(users).set({ platformRole: "super_admin" }).where(eq(users.id, operatorId));
 
   const owner = await signup("owner");
   ownerCookie = owner.cookie;
@@ -100,6 +103,7 @@ beforeAll(async () => {
     payload: { name: "Outfitters Assistant", pack: "retail", hostedPageEnabled: true },
   });
   publicKey = bot.json().keys[0].publicKey;
+  botId = bot.json().bot.id;
 });
 
 afterAll(async () => {
@@ -132,8 +136,8 @@ describe("operator console API", () => {
       (await op("PATCH", "/v1/operator/policies", { releasedPackPhase: 4 }, ownerCookie)).statusCode,
     ).toBe(404);
     const me = await op("GET", "/v1/auth/me");
-    expect(me.json().user.isOperator).toBe(true);
-    expect((await op("GET", "/v1/auth/me", undefined, ownerCookie)).json().user.isOperator).toBe(false);
+    expect(me.json().user.platformRole).toBe("super_admin");
+    expect((await op("GET", "/v1/auth/me", undefined, ownerCookie)).json().user.platformRole).toBeNull();
   });
 
   it("lists businesses with owners and an overview", async () => {
@@ -242,5 +246,76 @@ describe("operator console API", () => {
     const actions = new Set(mine.map((e) => e.action));
     expect(actions).toEqual(new Set(["plan.created", "plan.updated", "tenant.updated", "policies.updated"]));
     expect(mine.some((e) => e.action === "tenant.updated" && e.targetId === tenantId)).toBe(true);
+  });
+});
+
+describe("staff accounts and support access", () => {
+  it("keeps staff accounts out of businesses", async () => {
+    const res = await op("POST", "/v1/tenants", { name: "Staff Side Project" });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe("staff_account");
+    // The database refuses it too, whichever side changes.
+    await expect(
+      ownerDb.db.insert(memberships).values({ tenantId, userId: operatorId, role: "viewer" }),
+    ).rejects.toThrow();
+    const [owner] = await ownerDb.db.select().from(users).where(eq(users.email, emails[1]!));
+    await expect(
+      ownerDb.db.update(users).set({ platformRole: "super_admin" }).where(eq(users.id, owner!.id)),
+    ).rejects.toThrow();
+  });
+
+  it("shows all users and a business's assistants", async () => {
+    const list = (await op("GET", "/v1/operator/users?q=northshore")).json().users;
+    const owner = list.find((u: { email: string }) => u.email === emails[1]);
+    expect(owner.businesses).toContainEqual({ id: tenantId, name: "Northshore Outfitters", role: "owner" });
+    expect(owner.platformRole).toBeNull();
+    const staff = (await op("GET", "/v1/operator/users"))
+      .json()
+      .users.find((u: { email: string }) => u.email === emails[0]);
+    expect(staff).toMatchObject({ platformRole: "super_admin", businesses: [] });
+    expect((await op("GET", "/v1/operator/users", undefined, ownerCookie)).statusCode).toBe(404);
+
+    const detail = (await op("GET", `/v1/operator/tenants/${tenantId}`)).json();
+    expect(detail.members).toEqual([expect.objectContaining({ email: emails[1], role: "owner" })]);
+    // The retail assistant plus the grocery one created when phase 2 was released above.
+    expect(detail.assistants).toHaveLength(2);
+    expect(detail.assistants).toContainEqual(
+      expect.objectContaining({ id: botId, name: "Outfitters Assistant", pack: "retail", sources: 0 }),
+    );
+  });
+
+  it("lets super admins help a business, and the business sees it in its audit log", async () => {
+    const tenant = await op("GET", `/v1/tenants/${tenantId}`);
+    expect(tenant.json().tenant).toMatchObject({ role: "admin", support: true });
+    const owned = await op("GET", `/v1/tenants/${tenantId}`, undefined, ownerCookie);
+    expect(owned.json().tenant).toMatchObject({ role: "owner", support: false });
+
+    const edit = await op("PATCH", `/v1/tenants/${tenantId}/bots/${botId}`, { name: "Outfitters Helper" });
+    expect(edit.statusCode).toBe(200);
+    const entries = await ownerDb.db
+      .select()
+      .from(auditLogs)
+      .where(and(eq(auditLogs.tenantId, tenantId), eq(auditLogs.action, "support.change")));
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      actorUserId: operatorId,
+      metadata: { method: "PATCH", route: "/v1/tenants/:tenantId/bots/:botId" },
+    });
+    const [opEntry] = await ownerDb.db
+      .select()
+      .from(operatorAuditLogs)
+      .where(
+        and(eq(operatorAuditLogs.actorUserId, operatorId), eq(operatorAuditLogs.action, "support.change")),
+      );
+    expect(opEntry?.targetId).toBe(tenantId);
+
+    // Reads aren't logged; a business owner still can't reach another business.
+    await op("GET", `/v1/tenants/${tenantId}/bots`);
+    expect(
+      await ownerDb.db
+        .select()
+        .from(auditLogs)
+        .where(and(eq(auditLogs.tenantId, tenantId), eq(auditLogs.action, "support.change"))),
+    ).toHaveLength(1);
   });
 });

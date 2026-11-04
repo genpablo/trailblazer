@@ -74,19 +74,31 @@ pnpm test           # needs `pnpm db:up`; uses the traiblazer_test database
 
 CI (`.github/workflows/ci.yml`) runs the same steps against the docker-compose services.
 
-## Operator console
+## Operator console (Traiblazer staff only)
 
-Traiblazer staff manage plans, platform policies and businesses at http://localhost:3000/operator (the demo
-account is an operator). Plans and policies are stored in the database (`plans`, `platform_settings`) and
-every change is recorded in `operator_audit_logs`. Operator access can only be granted from the command line:
+Staff manage businesses, users, plans and platform policies at http://localhost:3000/operator. Sign in
+with the seeded staff account `staff@traiblazer.local` / `staff-password-123` (the demo business owner
+can't open it).
+
+- **Super admin** is a platform role on dedicated staff accounts. A staff account can never belong to a
+  business and a business member can never be made staff; the database enforces both
+  (`app_staff_not_member` trigger). Staff can't create businesses; staff signing in go straight to the
+  console.
+- Everyone else gets `404` from `/v1/operator/*`, and business users never see a link to the console.
+- **Support access:** from a business in the console, staff can open its assistants and usage pages and
+  make changes as an admin of that business. A "Support mode" banner is shown, and every change is
+  recorded in the business's own audit log and in the operator audit log (`support.change`).
+- Plans and policies are stored in the database (`plans`, `platform_settings`); every console change is
+  recorded in `operator_audit_logs`.
+
+Super admin access can only be granted from the command line (no API), to an account that isn't part of
+any business:
 
 ```bash
-pnpm --filter @traiblazer/api operator grant someone@example.com
-pnpm --filter @traiblazer/api operator revoke someone@example.com
-pnpm --filter @traiblazer/api operator list
+pnpm --filter @traiblazer/api superadmin grant dev@example.com
+pnpm --filter @traiblazer/api superadmin revoke dev@example.com
+pnpm --filter @traiblazer/api superadmin list
 ```
-
-Non-operators get `404` from `/v1/operator/*`. Suspending a business takes all of its assistants offline.
 
 ## Multi-tenancy and security model
 

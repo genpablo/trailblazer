@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { type Db, sessions, users } from "@traiblazer/db";
+import { type Db, type PlatformRole, sessions, users } from "@traiblazer/db";
 import { and, eq, gt } from "drizzle-orm";
 
 export const SESSION_COOKIE = "tb_session";
@@ -9,8 +9,11 @@ export interface SessionUser {
   email: string;
   name: string;
   uiLanguage: string;
-  /** Platform operator (read fresh on every request, so revoking takes effect immediately). */
-  isOperator: boolean;
+  /**
+   * Traiblazer staff role, null for business users. Read fresh on every request, so revoking takes
+   * effect immediately.
+   */
+  platformRole: PlatformRole | null;
 }
 
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
@@ -40,7 +43,7 @@ export async function getSessionUser(db: Db, token: string): Promise<SessionUser
       email: users.email,
       name: users.name,
       uiLanguage: users.uiLanguage,
-      isOperator: users.isOperator,
+      platformRole: users.platformRole,
     })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))

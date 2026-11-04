@@ -17,6 +17,11 @@ export default function DashboardPage() {
   const loadMe = useCallback(async () => {
     try {
       const data = await api<Me>("/v1/auth/me");
+      // Staff accounts don't own businesses; their home is the operator console.
+      if (data.user.platformRole) {
+        router.replace("/operator");
+        return;
+      }
       setMe(data);
       setTenantId((current) => current ?? data.tenants[0]?.id ?? null);
     } catch (err) {
@@ -42,11 +47,6 @@ export default function DashboardPage() {
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-xl font-semibold">{t("app.name")}</h1>
         <div className="flex items-center gap-4">
-          {me.user.isOperator && (
-            <Link href="/operator" className="text-sm underline">
-              {t("nav.operator")}
-            </Link>
-          )}
           <span className="muted text-sm">{me.user.name}</span>
           <LanguageSwitcher />
           <button className="btn btn-ghost" type="button" onClick={signOut}>

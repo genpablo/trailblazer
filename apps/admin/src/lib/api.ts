@@ -24,7 +24,8 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
 }
 
 export interface Me {
-  user: { id: string; email: string; name: string; uiLanguage: string; isOperator: boolean };
+  /** platformRole is set only for Traiblazer staff accounts (never for business users). */
+  user: { id: string; email: string; name: string; uiLanguage: string; platformRole: "super_admin" | null };
   tenants: { id: string; name: string; slug: string; plan: string; role: string }[];
 }
 

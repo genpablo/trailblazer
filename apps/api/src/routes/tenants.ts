@@ -4,9 +4,9 @@ import { desc, eq, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../context.js";
 import { audit } from "../lib/audit.js";
-import { notFound } from "../lib/errors.js";
+import { HttpError, notFound } from "../lib/errors.js";
 import { slugify } from "../lib/ids.js";
-import { requireTenantRole, requireUser } from "../plugins/auth.js";
+import { isSuperAdmin, requireTenantRole, requireUser } from "../plugins/auth.js";
 
 type TenantParams = { Params: { tenantId: string } };
 
@@ -28,8 +28,16 @@ export async function tenantRoutes(app: FastifyInstance, { db, platform }: AppCo
   });
 
   app.post("/v1/tenants", { preHandler: requireUser }, async (request, reply) => {
-    const input = createTenantSchema.parse(request.body);
     const user = request.user!;
+    // Staff accounts stay separate from businesses; they help businesses through support access.
+    if (isSuperAdmin(user)) {
+      throw new HttpError(
+        403,
+        "staff_account",
+        "Staff accounts can't own businesses. Use a separate account.",
+      );
+    }
+    const input = createTenantSchema.parse(request.body);
     // New businesses start on the operators' default plan (if it is still offered).
     const [policies, allPlans] = await Promise.all([platform!.policies(), platform!.plans()]);
     const plan = allPlans.find((p) => p.id === policies.defaultPlan && p.active)?.id ?? "trial";
@@ -60,7 +68,7 @@ export async function tenantRoutes(app: FastifyInstance, { db, platform }: AppCo
     async (request) => {
       const [tenant] = await db.select().from(tenants).where(eq(tenants.id, request.tenant!.id)).limit(1);
       if (!tenant) throw notFound("Business");
-      return { tenant: { ...tenant, role: request.tenant!.role } };
+      return { tenant: { ...tenant, role: request.tenant!.role, support: request.tenant!.support } };
     },
   );
 

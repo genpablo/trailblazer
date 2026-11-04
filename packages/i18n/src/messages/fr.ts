@@ -138,7 +138,6 @@ export const fr: Record<MessageKey, string> = {
   "conversations.empty": "Aucune conversation pour l'instant.",
   "conversations.messages": "{count, plural, one {# message} other {# messages}}",
   "nav.usage": "Utilisation",
-  "nav.operator": "Console opérateur",
   "usage.title": "Utilisation",
   "usage.thisMonth": "Questions ce mois-ci",
   "usage.resets": "Remise à zéro le {date, date, long}",

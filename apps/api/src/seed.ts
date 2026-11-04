@@ -1,7 +1,7 @@
 /**
- * Local demo data: one owner account, one business, one restaurant assistant.
- * Runs as the owner role (DATABASE_URL). Safe to re-run: skips if the demo user exists.
- * The demo user is also a platform operator, so the operator console works locally.
+ * Local demo data: one business owner account with a restaurant assistant, and a separate
+ * Traiblazer staff (super admin) account for the operator console.
+ * Runs as the owner role (DATABASE_URL). Safe to re-run: skips what already exists.
  */
 import { botKeys, bots, businessProfiles, createDb, memberships, tenants, users } from "@traiblazer/db";
 import { eq } from "drizzle-orm";
@@ -10,6 +10,8 @@ import { newPublicKey, slugify } from "./lib/ids.js";
 
 const DEMO_EMAIL = "demo@traiblazer.local";
 const DEMO_PASSWORD = "demo-password-123";
+const STAFF_EMAIL = "staff@traiblazer.local";
+const STAFF_PASSWORD = "staff-password-123";
 
 const url = process.env.DATABASE_URL ?? "postgres://traiblazer:traiblazer@localhost:5433/traiblazer";
 const { db, close } = createDb(url, { max: 1 });
@@ -17,9 +19,7 @@ const { db, close } = createDb(url, { max: 1 });
 try {
   const [existing] = await db.select().from(users).where(eq(users.email, DEMO_EMAIL)).limit(1);
   if (existing) {
-    if (!existing.isOperator)
-      await db.update(users).set({ isOperator: true }).where(eq(users.id, existing.id));
-    console.log(`Demo user already exists: ${DEMO_EMAIL} (operator)`);
+    console.log(`Demo user already exists: ${DEMO_EMAIL}`);
   } else {
     await db.transaction(async (tx) => {
       const [user] = await tx
@@ -28,7 +28,6 @@ try {
           email: DEMO_EMAIL,
           name: "Demo Owner",
           passwordHash: await hashPassword(DEMO_PASSWORD),
-          isOperator: true,
         })
         .returning();
       const [tenant] = await tx
@@ -73,6 +72,22 @@ try {
       });
     });
     console.log(`Seeded demo data. Sign in as ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
+  }
+
+  // Staff account: separate from every business (the database enforces this).
+  const [staff] = await db.select().from(users).where(eq(users.email, STAFF_EMAIL)).limit(1);
+  if (staff) {
+    console.log(`Staff user already exists: ${STAFF_EMAIL}`);
+  } else {
+    await db.insert(users).values({
+      email: STAFF_EMAIL,
+      name: "Traiblazer Staff",
+      passwordHash: await hashPassword(STAFF_PASSWORD),
+      platformRole: "super_admin",
+    });
+    console.log(
+      `Seeded staff account. Sign in as ${STAFF_EMAIL} / ${STAFF_PASSWORD} for the operator console`,
+    );
   }
 } finally {
   await close();

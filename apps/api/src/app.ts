@@ -8,7 +8,7 @@ import type { AppContext } from "./context.js";
 import { HttpError } from "./lib/errors.js";
 import { MemoryLimiter } from "./lib/limiter.js";
 import { PlatformConfig } from "./lib/platform.js";
-import { loadUser } from "./plugins/auth.js";
+import { auditSupportChanges, loadUser } from "./plugins/auth.js";
 import { assetRoutes } from "./routes/assets.js";
 import { authRoutes } from "./routes/auth.js";
 import { botRoutes } from "./routes/bots.js";
@@ -52,6 +52,7 @@ export async function buildApp(input: AppContext): Promise<FastifyInstance> {
   app.decorateRequest("user", null);
   app.decorateRequest("tenant", null);
   app.addHook("onRequest", loadUser(ctx.db));
+  app.addHook("onSend", auditSupportChanges(ctx.db));
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {

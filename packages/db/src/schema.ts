@@ -103,6 +103,9 @@ export const tenants = pgTable("tenants", {
   ...timestamps,
 });
 
+export const platformRoles = ["super_admin"] as const;
+export type PlatformRole = (typeof platformRoles)[number];
+
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   /** Always stored lower-cased. */
@@ -112,10 +115,12 @@ export const users = pgTable("users", {
   uiLanguage: text("ui_language").notNull().default("en"),
   emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
   /**
-   * Platform operator (Traiblazer staff): can open the operator console. Only granted from the
-   * command line (`pnpm --filter @traiblazer/api operator:grant <email>`), never through the API.
+   * Traiblazer staff role (null for every business user). Super admins use the operator console and
+   * can support any business. Granted only from the command line (`pnpm --filter @traiblazer/api
+   * superadmin grant <email>`), never through the API. Staff accounts can't belong to businesses
+   * (enforced by a database trigger), so a business login can never reach the console.
    */
-  isOperator: boolean("is_operator").notNull().default(false),
+  platformRole: text("platform_role").$type<PlatformRole>(),
   ...timestamps,
 });
 
