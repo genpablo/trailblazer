@@ -1,4 +1,4 @@
-import { botKeys, bots, businessProfiles, tenants, withTenant } from "@traiblazer/db";
+import { assets, botKeys, bots, businessProfiles, tenants, withTenant } from "@traiblazer/db";
 import { getPack, isSelectable } from "@traiblazer/industry-packs";
 import {
   addAllowedOriginSchema,
@@ -118,6 +118,16 @@ export async function botRoutes(app: FastifyInstance, { db, config }: AppContext
       if (!current) throw notFound("Assistant");
       if (input.variant !== undefined && !isSelectable(current.pack, input.variant)) {
         throw badRequest(`Variant "${input.variant}" doesn't belong to ${current.pack}`);
+      }
+      const avatar = input.settings?.avatar;
+      if (avatar?.kind === "image") {
+        // RLS: only this business's own uploads are visible here.
+        const [asset] = await tx
+          .select({ id: assets.id })
+          .from(assets)
+          .where(and(eq(assets.id, avatar.assetId), eq(assets.kind, "avatar")))
+          .limit(1);
+        if (!asset) throw badRequest("Unknown avatar image");
       }
       const languages = input.languages ?? current.languages;
       const defaultLanguage = input.defaultLanguage ?? current.defaultLanguage;

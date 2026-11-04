@@ -37,7 +37,15 @@ export interface Bot {
   languages: string[];
   defaultLanguage: string;
   hostedPageEnabled: boolean;
-  settings: { color?: string };
+  settings: {
+    theme?: string;
+    color?: string;
+    assistantName?: string;
+    avatar?: { kind: "initials" } | { kind: "icon"; icon: string } | { kind: "image"; assetId: string };
+    greeting?: Record<string, string>;
+    launcherLabel?: string;
+    launcherPosition?: "right" | "left";
+  };
 }
 
 export interface BotDetail {

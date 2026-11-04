@@ -17,6 +17,7 @@
     "@fastify/rate-limit": "11.2.2",
     "@traiblazer/core": "workspace:*",
     "@traiblazer/db": "workspace:*",
+    "@traiblazer/appearance": "workspace:*",
     "@traiblazer/i18n": "workspace:*",
     "@traiblazer/industry-packs": "workspace:*",
     "@traiblazer/llm": "workspace:*",

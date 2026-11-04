@@ -1,5 +1,7 @@
 /** Calls to the public chat API (same origin as this page). */
 
+import type { PublicAppearance } from "@traiblazer/appearance";
+
 export interface PublicLanguage {
   code: string;
   nativeName: string;
@@ -9,7 +11,7 @@ export interface PublicLanguage {
 export interface PublicBotConfig {
   name: string;
   businessName: string;
-  color: string | null;
+  appearance: PublicAppearance;
   languages: PublicLanguage[];
   defaultLanguage: string;
   greeting: Record<string, string>;

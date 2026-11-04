@@ -7,6 +7,7 @@ import { ZodError } from "zod";
 import type { AppContext } from "./context.js";
 import { HttpError } from "./lib/errors.js";
 import { loadUser } from "./plugins/auth.js";
+import { assetRoutes } from "./routes/assets.js";
 import { authRoutes } from "./routes/auth.js";
 import { botRoutes } from "./routes/bots.js";
 import { catalogRoutes } from "./routes/catalog.js";
@@ -66,6 +67,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   await app.register(async (scope) => botRoutes(scope, ctx));
   await app.register(async (scope) => catalogRoutes(scope));
   await app.register(async (scope) => knowledgeRoutes(scope, ctx));
+  await app.register(async (scope) => assetRoutes(scope, ctx));
   await app.register(async (scope) => publicRoutes(scope, ctx));
 
   return app;

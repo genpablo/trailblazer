@@ -1,5 +1,16 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  AVATAR_ICONS,
+  type AvatarIcon,
+  DEFAULT_COLOR,
+  DEFAULT_THEME,
+  initialsOf,
+  isHexColor,
+  isTheme,
+  type PublicAppearance,
+  type PublicAvatar,
+} from "@traiblazer/appearance";
 import { runChat } from "@traiblazer/core";
 import {
   type BotSettings,
@@ -18,8 +29,33 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { AppContext } from "../context.js";
 import { HttpError, notFound } from "../lib/errors.js";
 import { isUuid } from "../lib/ids.js";
+import { publicAssetUrl } from "./assets.js";
 
 const KEY_RE = /^pk_(live|test)_[A-Za-z0-9_-]{10,64}$/;
+
+/** Resolves stored settings into what the chat page and widget need (defaults applied). */
+export function toPublicAppearance(
+  settings: BotSettings,
+  businessName: string,
+  publicUrl: string,
+): PublicAppearance {
+  const assistantName = settings.assistantName?.trim() || businessName;
+  const stored = settings.avatar;
+  const avatar: PublicAvatar =
+    stored?.kind === "image"
+      ? { kind: "image", url: publicAssetUrl(publicUrl, stored.assetId) }
+      : stored?.kind === "icon" && stored.icon in AVATAR_ICONS
+        ? { kind: "icon", icon: stored.icon as AvatarIcon }
+        : { kind: "initials", initials: initialsOf(assistantName) };
+  return {
+    theme: isTheme(settings.theme) ? settings.theme : DEFAULT_THEME,
+    color: settings.color && isHexColor(settings.color) ? settings.color : DEFAULT_COLOR,
+    assistantName,
+    avatar,
+    launcherLabel: settings.launcherLabel?.trim() || null,
+    launcherPosition: settings.launcherPosition === "left" ? "left" : "right",
+  };
+}
 
 const ASSET_TYPES: Record<string, string> = {
   ".js": "text/javascript; charset=utf-8",
@@ -123,18 +159,20 @@ export async function publicRoutes(app: FastifyInstance, ctx: AppContext) {
 
   // ---- Chat API -----------------------------------------------------------------------------
 
-  app.get<{ Params: { key: string } }>("/v1/public/bots/:key", async (request) => {
+  app.get<{ Params: { key: string } }>("/v1/public/bots/:key", async (request, reply) => {
     const found = await loadBot(request.params.key);
     if (!found || found.bot.status === "paused") throw notFound("Assistant");
     const { bot, profile } = found;
     const settings: BotSettings = bot.settings ?? {};
     const guidance = getPackGuidance(bot.pack, bot.variant);
+    const businessName = profile?.businessName ?? bot.name;
+    // Public, non-sensitive data; the widget loader reads it from the customer's website.
+    reply.header("access-control-allow-origin", "*");
     return {
       bot: {
         name: bot.name,
-        businessName: profile?.businessName ?? bot.name,
-        color: settings.color ?? null,
-        launcherPosition: settings.launcherPosition ?? "right",
+        businessName,
+        appearance: toPublicAppearance(settings, businessName, config.PUBLIC_URL),
         defaultLanguage: bot.defaultLanguage,
         languages: bot.languages.map((code) => {
           const lang = getLanguage(code);

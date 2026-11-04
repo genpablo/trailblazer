@@ -20,6 +20,9 @@ importers:
 
   apps/admin:
     dependencies:
+      '@traiblazer/appearance':
+        specifier: workspace:*
+        version: link:../../packages/appearance
       '@traiblazer/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n
@@ -69,6 +72,9 @@ importers:
       '@fastify/rate-limit':
         specifier: 11.2.2
         version: 11.2.2
+      '@traiblazer/appearance':
+        specifier: workspace:*
+        version: link:../../packages/appearance
       '@traiblazer/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -115,6 +121,9 @@ importers:
 
   apps/chat:
     dependencies:
+      '@traiblazer/appearance':
+        specifier: workspace:*
+        version: link:../../packages/appearance
       preact:
         specifier: 11.1.1
         version: 11.1.1
@@ -147,6 +156,15 @@ importers:
       typescript:
         specifier: ~6.0.3
         version: 6.0.3
+
+  packages/appearance:
+    devDependencies:
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(vite@8.3.5(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
 
   packages/core:
     dependencies:
@@ -250,6 +268,9 @@ importers:
 
   packages/shared:
     dependencies:
+      '@traiblazer/appearance':
+        specifier: workspace:*
+        version: link:../appearance
       '@traiblazer/i18n':
         specifier: workspace:*
         version: link:../i18n

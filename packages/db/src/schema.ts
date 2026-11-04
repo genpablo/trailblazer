@@ -30,6 +30,11 @@ const vector = customType<{ data: number[]; driverData: string }>({
   fromDriver: (value) => JSON.parse(value) as number[],
 });
 
+/** Binary data (postgres-js returns Buffer). */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => "bytea",
+});
+
 /*
  * Tenancy model
  * -------------
@@ -118,13 +123,22 @@ export const memberships = pgTable(
 // Tenant-owned tables (RLS enforced)
 // ---------------------------------------------------------------------------------------------
 
+/** Chat appearance and wording (validated by @traiblazer/shared; see @traiblazer/appearance). */
 export interface BotSettings {
+  /** Design template id, e.g. "classic", "minimal", "friendly", "bold", "midnight". */
+  theme?: string;
   /** Brand color for the chat header and launcher, e.g. "#1f6f5c". */
   color?: string;
+  /** Name the assistant shows to visitors (any text, any language). */
+  assistantName?: string;
+  /** Assistant picture: initials, a built-in icon, or an uploaded image asset. */
+  avatar?: { kind: "initials" } | { kind: "icon"; icon: string } | { kind: "image"; assetId: string };
   /** Greeting per language code; falls back to a default greeting. */
   greeting?: Record<string, string>;
   /** Suggested first questions per language code. */
   quickReplies?: Record<string, string[]>;
+  /** Optional text next to the widget's launcher button. */
+  launcherLabel?: string;
   launcherPosition?: "right" | "left";
 }
 
@@ -246,7 +260,6 @@ export const auditLogs = pgTable(
   (t) => [index("audit_logs_tenant_created_idx").on(t.tenantId, t.createdAt)],
 );
 
-/** Tables protected by row-level security. Keep in sync with migrations. */
 // ---------------------------------------------------------------------------------------------
 // Knowledge (RLS enforced)
 // ---------------------------------------------------------------------------------------------
@@ -510,8 +523,34 @@ export const jobs = pgTable(
   (t) => [index("jobs_ready_idx").on(t.status, t.runAt)],
 );
 
+// ---------------------------------------------------------------------------------------------
+// Assets (RLS enforced) — small public images such as assistant avatars.
+// Stored in Postgres for now; behind an interface so they can move to object storage (S3/R2).
+// ---------------------------------------------------------------------------------------------
+
+export const assetKinds = ["avatar"] as const;
+export type AssetKind = (typeof assetKinds)[number];
+
+export const assets = pgTable(
+  "assets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<AssetKind>().notNull(),
+    contentType: text("content_type").notNull(),
+    bytes: bytea("bytes").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    sha256: text("sha256").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("assets_tenant_idx").on(t.tenantId)],
+);
+
 /** Tables protected by row-level security. Keep in sync with migrations. */
 export const rlsTables = [
+  "assets",
   "bots",
   "bot_keys",
   "business_profiles",

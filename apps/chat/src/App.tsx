@@ -1,4 +1,7 @@
+import { paletteFor } from "@traiblazer/appearance";
+import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
+import { Avatar } from "./Avatar";
 import { type Citation, fetchConfig, fetchHistory, type PublicBotConfig, streamChat } from "./api";
 import { Markdown } from "./markdown";
 import { conversationStore, languageStore, visitorId } from "./storage";
@@ -18,6 +21,8 @@ export interface AppProps {
   /** "hosted" (full page), "inline" (iframe in a page), "widget" (floating panel), "playground" (admin). */
   mode: "hosted" | "inline" | "widget" | "playground";
   pageUrl: string | null;
+  /** Admin preview: looks like `mode`, but conversations are logged as playground tests. */
+  preview?: boolean;
 }
 
 let counter = 0;
@@ -37,7 +42,7 @@ function pickLanguage(config: PublicBotConfig, publicKey: string): string {
   return config.defaultLanguage;
 }
 
-export function App({ publicKey, mode, pageUrl }: AppProps) {
+export function App({ publicKey, mode, pageUrl, preview = false }: AppProps) {
   const [config, setConfig] = useState<PublicBotConfig | null>(null);
   const [failed, setFailed] = useState(false);
   const [lang, setLang] = useState("en");
@@ -107,7 +112,7 @@ export function App({ publicKey, mode, pageUrl }: AppProps) {
         conversationId: conversationId.current,
         visitorId: visitor.current,
         message,
-        channel: mode,
+        channel: preview ? "playground" : mode,
         pageUrl,
       })) {
         if (event.type === "start") {
@@ -164,15 +169,54 @@ export function App({ publicKey, mode, pageUrl }: AppProps) {
   }
   if (!config) return <div class="tb-shell" data-mode={mode} aria-busy="true" />;
 
-  const greeting = config.greeting[lang] ?? ui(lang, "greeting", { business: config.businessName });
+  const { appearance } = config;
+  const named = appearance.assistantName !== config.businessName;
+  const greeting =
+    config.greeting[lang] ??
+    (named
+      ? ui(lang, "greetingNamed", { name: appearance.assistantName, business: config.businessName })
+      : ui(lang, "greeting", { business: config.businessName }));
   const quickReplies = config.quickReplies[lang] ?? config.quickReplies[lang === "fr" ? "fr" : "en"] ?? [];
-  const brand = config.color ?? "#1f6f5c";
+  const palette = paletteFor(appearance.color, appearance.theme);
+  const avatarBesideReplies = appearance.theme === "friendly" || appearance.theme === "bold";
+
+  const assistantRow = (key: string | undefined, className: string, children: ComponentChildren) =>
+    avatarBesideReplies ? (
+      <div key={key} class="tb-row">
+        <Avatar avatar={appearance.avatar} size={28} />
+        <div class={className} dir="auto">
+          {children}
+        </div>
+      </div>
+    ) : (
+      <div key={key} class={className} dir="auto">
+        {children}
+      </div>
+    );
 
   return (
-    <div class="tb-shell" data-mode={mode} dir={dir} style={{ "--tb-brand": brand }}>
+    <div
+      class="tb-shell"
+      data-mode={mode}
+      data-theme={appearance.theme}
+      dir={dir}
+      style={{
+        "--tb-brand": palette.brand,
+        "--tb-on-brand": palette.onBrand,
+        "--tb-accent": palette.accent,
+      }}
+    >
       <header class="tb-header">
         <div class="tb-title">
-          <strong>{config.businessName}</strong>
+          <Avatar avatar={appearance.avatar} size={appearance.theme === "bold" ? 52 : 36} />
+          <div class="tb-names">
+            <strong dir="auto">{appearance.assistantName}</strong>
+            {named && (
+              <span class="tb-subtitle" dir="auto">
+                {config.businessName}
+              </span>
+            )}
+          </div>
         </div>
         <div class="tb-header-actions">
           {config.languages.length > 1 && (
@@ -214,13 +258,21 @@ export function App({ publicKey, mode, pageUrl }: AppProps) {
       </header>
 
       <div class="tb-log" ref={logRef} role="log" aria-live="polite" aria-relevant="additions">
-        <div class="tb-msg tb-assistant" dir="auto">
-          <Markdown text={greeting} />
-        </div>
-        {messages.map((m) => (
-          <div key={m.id} class={`tb-msg tb-${m.role}${m.error ? " tb-error" : ""}`} dir="auto">
-            {m.role === "assistant" ? (
-              m.content ? (
+        {assistantRow(undefined, "tb-msg tb-assistant", <Markdown text={greeting} />)}
+        {messages.map((m) => {
+          const className = `tb-msg tb-${m.role}${m.error ? " tb-error" : ""}`;
+          if (m.role === "user") {
+            return (
+              <div key={m.id} class={className} dir="auto">
+                <p>{m.content}</p>
+              </div>
+            );
+          }
+          return assistantRow(
+            m.id,
+            className,
+            <>
+              {m.content ? (
                 <Markdown text={m.content} />
               ) : (
                 <span class="tb-typing" role="img" aria-label={ui(lang, "thinking")}>
@@ -228,24 +280,22 @@ export function App({ publicKey, mode, pageUrl }: AppProps) {
                   <i />
                   <i />
                 </span>
-              )
-            ) : (
-              <p>{m.content}</p>
-            )}
-            {!m.pending && m.citations.length > 0 && (
-              <div class="tb-sources">
-                <span>{ui(lang, "sources")}:</span>
-                {m.citations.map((c) =>
-                  c.url ? (
-                    <a key={c.url} href={c.url} target="_blank" rel="noopener noreferrer nofollow">
-                      {c.title ?? new URL(c.url).pathname}
-                    </a>
-                  ) : null,
-                )}
-              </div>
-            )}
-          </div>
-        ))}
+              )}
+              {!m.pending && m.citations.length > 0 && (
+                <div class="tb-sources">
+                  <span>{ui(lang, "sources")}:</span>
+                  {m.citations.map((c) =>
+                    c.url ? (
+                      <a key={c.url} href={c.url} target="_blank" rel="noopener noreferrer nofollow">
+                        {c.title ?? new URL(c.url).pathname}
+                      </a>
+                    ) : null,
+                  )}
+                </div>
+              )}
+            </>,
+          );
+        })}
         {messages.length === 0 && quickReplies.length > 0 && (
           <div class="tb-chips">
             {quickReplies.map((q) => (

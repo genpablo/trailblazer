@@ -21,8 +21,8 @@ export function ShareTab({
   if (!key) return null;
 
   const pageUrl = `${detail.chatUrl}/c/${key.publicKey}`;
-  const color = detail.bot.settings.color ?? "#1f6f5c";
-  const widgetCode = `<script src="${detail.chatUrl}/widget.js" data-bot="${key.publicKey}" data-color="${color}" async></script>`;
+  // Colors, picture and label come from the Appearance settings at load time; the code never changes.
+  const widgetCode = `<script src="${detail.chatUrl}/widget.js" data-bot="${key.publicKey}" async></script>`;
   const iframeCode = `<iframe src="${pageUrl}?embed=inline" title="Chat" style="width:100%;height:600px;border:0;border-radius:12px" loading="lazy"></iframe>`;
 
   async function patch(body: unknown) {
@@ -96,19 +96,6 @@ export function ShareTab({
             {t("share.addSite")}
           </button>
         </form>
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <h3 className="font-medium">{t("share.brandColor")}</h3>
-        <input
-          type="color"
-          className="h-10 w-16 cursor-pointer rounded border border-[var(--border)]"
-          defaultValue={color}
-          aria-label={t("share.brandColor")}
-          onBlur={(e) => {
-            if (e.target.value !== color) void patch({ settings: { color: e.target.value } });
-          }}
-        />
       </section>
 
       {error && (

@@ -1,5 +1,12 @@
+import { AVATAR_ICON_IDS, type AvatarIcon, THEMES } from "@traiblazer/appearance";
 import { isSupportedLanguage, normalizeLanguageTag } from "@traiblazer/i18n";
 import { z } from "zod";
+
+const avatarSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("initials") }),
+  z.object({ kind: z.literal("icon"), icon: z.enum(AVATAR_ICON_IDS as [AvatarIcon, ...AvatarIcon[]]) }),
+  z.object({ kind: z.literal("image"), assetId: z.uuid() }),
+]);
 
 /** Request/response schemas shared by the API and the admin portal. */
 
@@ -79,14 +86,28 @@ export const updateBotSchema = z
     hostedPageEnabled: z.boolean(),
     settings: z
       .object({
+        // Limited: one of the designed templates and a brand color (text colors are derived).
+        theme: z.enum(THEMES),
         color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a hex color like #1f6f5c"),
+        // Fully customizable: the assistant's name, picture, greeting and launcher label.
+        // Empty = use the business name.
+        assistantName: z.string().trim().max(40),
+        avatar: avatarSchema,
         greeting: z.record(z.string(), z.string().trim().max(300)),
         quickReplies: z.record(z.string(), z.array(z.string().trim().min(1).max(120)).max(6)),
+        launcherLabel: z.string().trim().max(30),
         launcherPosition: z.enum(["right", "left"]),
       })
       .partial(),
   })
   .partial();
+
+/** Uploaded images: base64 data, at most 512 KB once decoded (PNG, JPEG or WebP; checked by content). */
+export const MAX_ASSET_BYTES = 512 * 1024;
+export const assetUploadSchema = z.object({
+  kind: z.enum(["avatar"]),
+  data: z.base64().max(Math.ceil((MAX_ASSET_BYTES * 4) / 3) + 4),
+});
 export type UpdateBotInput = z.infer<typeof updateBotSchema>;
 
 // ---- Knowledge -------------------------------------------------------------------------------

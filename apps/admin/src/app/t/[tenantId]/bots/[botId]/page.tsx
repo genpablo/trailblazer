@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { AppearanceTab } from "@/components/bot/AppearanceTab";
 import { ConversationsTab } from "@/components/bot/ConversationsTab";
 import { KnowledgeTab } from "@/components/bot/KnowledgeTab";
 import { ShareTab } from "@/components/bot/ShareTab";
@@ -10,8 +11,8 @@ import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ApiError, api, type BotDetail } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
-type Tab = "knowledge" | "test" | "share" | "conversations";
-const TABS: Tab[] = ["knowledge", "test", "share", "conversations"];
+type Tab = "knowledge" | "appearance" | "test" | "share" | "conversations";
+const TABS: Tab[] = ["knowledge", "appearance", "test", "share", "conversations"];
 
 export default function BotPage() {
   const { tenantId, botId } = useParams<{ tenantId: string; botId: string }>();
@@ -100,6 +101,9 @@ export default function BotPage() {
               className="h-[620px] w-full rounded-lg border border-[var(--border)]"
             />
           </div>
+        )}
+        {tab === "appearance" && (
+          <AppearanceTab detail={detail} base={base} tenantId={tenantId} onChange={load} />
         )}
         {tab === "share" && <ShareTab detail={detail} base={base} onChange={load} />}
         {tab === "conversations" && <ConversationsTab base={base} />}

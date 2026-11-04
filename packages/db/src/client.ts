@@ -49,3 +49,16 @@ export async function resolveBotKey(
   const row = rows[0];
   return row ? { tenantId: row.tenant_id, botId: row.bot_id, allowedOrigins: row.allowed_origins } : null;
 }
+
+/** Reads a public image (e.g. an assistant avatar) by id, without tenant context. */
+export async function getPublicAsset(
+  db: Db,
+  id: string,
+): Promise<{ contentType: string; bytes: Buffer; sha256: string } | null> {
+  if (!UUID_RE.test(id)) return null;
+  const rows = await db.execute<{ content_type: string; bytes: Buffer; sha256: string }>(
+    sql`select content_type, bytes, sha256 from app_get_public_asset(${id}::uuid)`,
+  );
+  const row = rows[0];
+  return row ? { contentType: row.content_type, bytes: row.bytes, sha256: row.sha256 } : null;
+}

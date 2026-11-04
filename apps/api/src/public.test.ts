@@ -315,7 +315,7 @@ describe("chat page, iframe and widget", () => {
     expect(framed.statusCode).toBe(200);
 
     const config = await app.inject({ method: "GET", url: `/v1/public/bots/${publicKey}` });
-    expect(config.json().bot.color).toBe("#aa3300");
+    expect(config.json().bot.appearance.color).toBe("#aa3300");
   });
 
   it("serves the widget loader for any site and the hashed assets", async () => {
@@ -331,5 +331,115 @@ describe("chat page, iframe and widget", () => {
 
   it("shows nothing for unknown keys", async () => {
     expect((await app.inject({ method: "GET", url: "/c/pk_test_unknownkey123" })).statusCode).toBe(404);
+  });
+});
+
+describe("appearance", () => {
+  // 1×1 PNG
+  const PNG =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+  const upload = (data: string, who = cookie, tenant = tenantId) =>
+    app.inject({
+      method: "POST",
+      url: `/v1/tenants/${tenant}/assets`,
+      headers: { cookie: who },
+      payload: { kind: "avatar", data },
+    });
+  const patchSettings = (settings: Record<string, unknown>) =>
+    app.inject({
+      method: "PATCH",
+      url: `/v1/tenants/${tenantId}/bots/${botId}`,
+      headers: { cookie },
+      payload: { settings },
+    });
+  const publicConfig = async () =>
+    (await app.inject({ method: "GET", url: `/v1/public/bots/${publicKey}` })).json().bot;
+
+  it("uses safe defaults: classic template, business name, initials", async () => {
+    const res = await app.inject({ method: "GET", url: `/v1/public/bots/${publicKey}` });
+    expect(res.headers["access-control-allow-origin"]).toBe("*");
+    expect(res.json().bot.appearance).toMatchObject({
+      theme: "classic",
+      assistantName: "Harbour Inn",
+      avatar: { kind: "initials", initials: "HI" },
+      launcherPosition: "right",
+    });
+  });
+
+  it("lets the owner pick a template and fully customize name, icon and launcher label", async () => {
+    const res = await patchSettings({
+      theme: "midnight",
+      assistantName: "Captain Mo 🌊",
+      avatar: { kind: "icon", icon: "compass" },
+      launcherLabel: "Ask Mo",
+      launcherPosition: "left",
+    });
+    expect(res.statusCode).toBe(200);
+    expect((await publicConfig()).appearance).toMatchObject({
+      theme: "midnight",
+      assistantName: "Captain Mo 🌊",
+      avatar: { kind: "icon", icon: "compass" },
+      launcherLabel: "Ask Mo",
+      launcherPosition: "left",
+    });
+  });
+
+  it("only accepts the designed templates and icons", async () => {
+    expect((await patchSettings({ theme: "neon" })).statusCode).toBe(400);
+    expect((await patchSettings({ avatar: { kind: "icon", icon: "skull" } })).statusCode).toBe(400);
+    expect((await patchSettings({ color: "red" })).statusCode).toBe(400);
+    expect((await patchSettings({ assistantName: "x".repeat(41) })).statusCode).toBe(400);
+  });
+
+  it("uploads a photo avatar and serves it publicly", async () => {
+    const res = await upload(PNG);
+    expect(res.statusCode).toBe(201);
+    const { id, url } = res.json().asset;
+    expect(url).toBe(`${PUBLIC}/v1/public/assets/${id}`);
+
+    expect((await patchSettings({ avatar: { kind: "image", assetId: id } })).statusCode).toBe(200);
+    expect((await publicConfig()).appearance.avatar).toEqual({ kind: "image", url });
+
+    const image = await app.inject({ method: "GET", url: `/v1/public/assets/${id}` });
+    expect(image.statusCode).toBe(200);
+    expect(image.headers["content-type"]).toBe("image/png");
+    expect(image.headers["x-content-type-options"]).toBe("nosniff");
+    expect(image.headers["cross-origin-resource-policy"]).toBe("cross-origin");
+    expect(image.rawPayload.equals(Buffer.from(PNG, "base64"))).toBe(true);
+  });
+
+  it("rejects non-images, SVG and oversized files", async () => {
+    expect((await upload(Buffer.from("<svg onload=alert(1)></svg>").toString("base64"))).statusCode).toBe(
+      400,
+    );
+    expect((await upload(Buffer.from("hello").toString("base64"))).statusCode).toBe(400);
+    const big = Buffer.concat([Buffer.from(PNG, "base64"), Buffer.alloc(600 * 1024)]).toString("base64");
+    expect((await upload(big)).statusCode).toBe(400);
+  });
+
+  it("does not let a business use another business's image", async () => {
+    const otherEmail = `other-${crypto.randomUUID().slice(0, 8)}@test.local`;
+    const signup = await app.inject({
+      method: "POST",
+      url: "/v1/auth/signup",
+      payload: { email: otherEmail, password: "correct-horse-battery", name: "Other" },
+    });
+    const otherCookie = `tb_session=${signup.cookies.find((c) => c.name === "tb_session")!.value}`;
+    const otherTenant = (
+      await app.inject({
+        method: "POST",
+        url: "/v1/tenants",
+        headers: { cookie: otherCookie },
+        payload: { name: "Other" },
+      })
+    ).json().tenant.id as string;
+    const foreign = (await upload(PNG, otherCookie, otherTenant)).json().asset.id as string;
+
+    expect((await patchSettings({ avatar: { kind: "image", assetId: foreign } })).statusCode).toBe(400);
+    // Uploading into a business you don't belong to is not possible either.
+    expect((await upload(PNG, otherCookie, tenantId)).statusCode).toBe(404);
+
+    await ownerDb.db.delete(tenants).where(eq(tenants.id, otherTenant));
+    await ownerDb.db.delete(users).where(eq(users.email, otherEmail));
   });
 });
