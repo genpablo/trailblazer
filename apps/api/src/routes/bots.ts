@@ -1,4 +1,4 @@
-import { botKeys, bots, businessProfiles, withTenant } from "@traiblazer/db";
+import { botKeys, bots, businessProfiles, tenants, withTenant } from "@traiblazer/db";
 import { getPack, isSelectable } from "@traiblazer/industry-packs";
 import {
   addAllowedOriginSchema,
@@ -51,9 +51,15 @@ export async function botRoutes(app: FastifyInstance, { db, config }: AppContext
           variant: input.variant ?? null,
           languages,
           defaultLanguage,
+          hostedPageEnabled: input.hostedPageEnabled ?? false,
         })
         .returning();
-      const [profile] = await tx.insert(businessProfiles).values({ tenantId, botId: bot!.id }).returning();
+      // Start the profile with the business's name, so greetings and the web version show it.
+      const [tenant] = await tx.select({ name: tenants.name }).from(tenants).where(eq(tenants.id, tenantId));
+      const [profile] = await tx
+        .insert(businessProfiles)
+        .values({ tenantId, botId: bot!.id, businessName: tenant?.name ?? null })
+        .returning();
       const [key] = await tx
         .insert(botKeys)
         .values({

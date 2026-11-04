@@ -37,6 +37,7 @@ try {
           variant: "casual",
           languages: ["en", "fr", "zh-Hans", "pa"],
           defaultLanguage: "en",
+          hostedPageEnabled: true,
         })
         .returning();
       await tx.insert(businessProfiles).values({

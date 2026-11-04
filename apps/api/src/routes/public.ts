@@ -29,8 +29,8 @@ const ASSET_TYPES: Record<string, string> = {
   ".png": "image/png",
 };
 
-const unavailablePage = (title: string) =>
-  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{font:16px system-ui,sans-serif;display:grid;place-items:center;height:100vh;margin:0;color:#555}</style></head><body><p>${title}</p></body></html>`;
+/** Shown when a link/QR code points to a chat that is paused, unknown, or whose web version is off. */
+const UNAVAILABLE_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Chat unavailable</title><style>body{font:16px/1.5 system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;padding:16px;color:#555;text-align:center}</style></head><body><div><p>This chat isn't available right now.</p><p lang="fr">Ce clavardage n'est pas disponible pour le moment.</p></div></body></html>`;
 
 /**
  * Public, unauthenticated surface used by visitors:
@@ -69,19 +69,13 @@ export async function publicRoutes(app: FastifyInstance, ctx: AppContext) {
     const found = await loadBot(request.params.key);
     reply.header("cache-control", "no-store").header("referrer-policy", "strict-origin-when-cross-origin");
     if (!found || found.bot.status === "paused") {
-      return reply
-        .code(404)
-        .type("text/html; charset=utf-8")
-        .send(unavailablePage("This chat is not available."));
+      return reply.code(404).type("text/html; charset=utf-8").send(UNAVAILABLE_PAGE);
     }
 
     // Top-level visits (the shareable link) can be switched off; iframes on allowed sites still work.
     const dest = request.headers["sec-fetch-dest"];
     if (dest === "document" && !found.bot.hostedPageEnabled) {
-      return reply
-        .code(404)
-        .type("text/html; charset=utf-8")
-        .send(unavailablePage("This chat is not available."));
+      return reply.code(404).type("text/html; charset=utf-8").send(UNAVAILABLE_PAGE);
     }
 
     if (!distDir) throw new HttpError(503, "unavailable", "Chat page is not built");

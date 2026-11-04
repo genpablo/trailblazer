@@ -153,8 +153,12 @@ export const bots = pgTable(
     defaultLanguage: text("default_language").notNull().default("en"),
     modelProfile: text("model_profile").notNull().default("default"),
     persona: text("persona"),
-    /** Whether the public chat link (/c/<key>) works as a full page, not only inside allowed sites. */
-    hostedPageEnabled: boolean("hosted_page_enabled").notNull().default(true),
+    /**
+     * "Web version": the business's own chat page at /c/<key>, reached by link or QR code — for
+     * businesses (e.g. independent contractors) without a website. Off until the owner activates it;
+     * embedding on the business's allowed websites works either way.
+     */
+    hostedPageEnabled: boolean("hosted_page_enabled").notNull().default(false),
     settings: jsonb("settings").$type<BotSettings>().notNull().default({}),
     ...timestamps,
   },

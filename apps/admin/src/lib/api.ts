@@ -43,6 +43,7 @@ export interface Bot {
 export interface BotDetail {
   bot: Bot;
   keys: { id: string; publicKey: string; allowedOrigins: string[] }[];
+  profile: { businessName: string | null } | null;
   pack: Pack | null;
   chatUrl: string;
 }

@@ -155,6 +155,7 @@ function BotsSection({ tenantId }: { tenantId: string }) {
               <span className="muted text-sm">
                 {packs.find((p) => p.slug === bot.pack)?.name ?? bot.pack} · {t(`bots.status.${bot.status}`)}{" "}
                 · {bot.languages.join(", ")}
+                {bot.hostedPageEnabled && ` · ${t("bots.webOn")}`}
               </span>
             </li>
           ))}
@@ -193,7 +194,13 @@ function CreateBotForm({
     try {
       await api(`/v1/tenants/${tenantId}/bots`, {
         method: "POST",
-        body: { name: data.get("name"), pack, variant: data.get("variant") || null, languages: chosen },
+        body: {
+          name: data.get("name"),
+          pack,
+          variant: data.get("variant") || null,
+          languages: chosen,
+          hostedPageEnabled: data.get("webVersion") === "on",
+        },
       });
       form.reset();
       await onCreated();
@@ -258,6 +265,10 @@ function CreateBotForm({
           ))}
         </div>
       </fieldset>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="webVersion" />
+        {t("bots.webVersion")}
+      </label>
       {error && (
         <p className="error text-sm" role="alert">
           {error}

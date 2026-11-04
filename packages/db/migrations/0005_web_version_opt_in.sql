@@ -1,0 +1,1 @@
+ALTER TABLE "bots" ALTER COLUMN "hosted_page_enabled" SET DEFAULT false;

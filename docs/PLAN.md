@@ -229,20 +229,25 @@ One chat web app (`apps/chat`) powers every surface. Customers pick what fits th
 
 | Surface | How the customer uses it | Good for |
 |---|---|---|
-| **Hosted chat page** | A link `https://<chat-domain>/c/<public-key>` — full-page chat with the business's branding; share it anywhere (website button, Google Business profile, Facebook, email signature, **QR code** on tables/doors/flyers) | Businesses without a website or who can't edit it; restaurants/lodging QR codes |
+| **Web version** (hosted chat page) | Opt-in per assistant ("Activate web version"). A link `https://<chat-domain>/c/<public-key>` plus a **QR code generated in the admin** (PNG/SVG download) — full-page chat with the business's branding; share it anywhere (business cards, flyers, invoices, vehicles, tables, Google Business profile, social media) | **Independent contractors and other businesses without a website**; restaurants/lodging table and door QR codes |
 | **Inline iframe** | `<iframe src="https://<chat-domain>/c/<public-key>?embed=inline">` placed inside one of their pages (e.g. a "Ask us" page) | Customers who want a full chat page inside their own site |
 | **Floating widget** | `<script src="https://<chat-domain>/widget.js" data-bot="<public-key>" async></script>` — a small loader adds a launcher button that opens the same chat page in an iframe panel | Every page of their site |
 
 - **Isolation:** all three use the chat page; the widget and inline embed are iframes, so the customer's CSS
   and scripts can't break the chat (and vice versa). Loader script < 5 KB; chat page loads on first open.
 - **Who may embed:** the chat page is served with `Content-Security-Policy: frame-ancestors` built from the
-  bot's allowed origins — only the business's own sites can iframe it. The hosted link can be switched off.
+  bot's allowed origins — only the business's own sites can iframe it. The web version is off until the owner
+  activates it (at creation — "I don't have a website" — or later in Share & install); when off, the link and
+  QR code show a "not available" page while website embeds keep working.
+- **Same features everywhere:** the web version is the same assistant, knowledge and conversation log as the
+  widget; there is no separate "contractor" product.
 - **Same origin as the API:** the chat page and its API calls share one origin, so no CORS and no third-party cookies.
 - Streaming, sanitized markdown, sources, quick replies, lead/quote cards, image upload (Phase 2), human handoff
 - **Language switcher**, auto-detect, RTL, CJK/Indic fonts, IME-safe input
 - **WCAG 2.1 AA** (covers Ontario AODA)
 - Branding: colors, logo, greeting per language, launcher position; hide "Powered by" on paid plans
-- Later: QR-code generator in admin, WordPress plugin, Shopify app, Wix/Squarespace/Webflow guides
+- Later: friendly short links (e.g. `/<business-name>`) that survive key rotation, QR scan analytics,
+  printable QR flyer templates, WordPress plugin, Shopify app, Wix/Squarespace/Webflow guides
 
 ### 7.2 Client admin portal (EN/FR first)
 
@@ -470,7 +475,7 @@ public API, AI add-ons (review replies, social posts in multiple languages).
 | **1.1 Chat end-to-end** | Knowledge tables + RLS; LLM gateway (Claude via Anthropic SDK, OpenAI-compatible adapter for OpenRouter & others, offline test provider); background jobs; website crawl, text and Q&A sources; full-text + trigram retrieval (vector search when an embedding provider is configured); query translation for non-EN/FR questions; streaming answers with sources; conversation logging + usage metering; **hosted chat page, inline iframe and floating widget**; admin: knowledge sources, playground, share link & embed codes |
 | 1.2 Modules | Lead capture & handoff (tools), hours & "open now", notices, booking/ordering links, age gate, safety escalation; scope guard classifier |
 | 1.3 Content | PDF/DOCX upload, menu photos (vision OCR), auto-filled business profile; pack content for the 7 launch packs |
-| 1.4 Launch readiness | Plan limits & quotas, evals EN/FR + Tier 2 answers, prospect demo generator, QR codes, accessibility pass |
+| 1.4 Launch readiness | Plan limits & quotas, evals EN/FR + Tier 2 answers, prospect demo generator, accessibility pass (web version + QR codes delivered with 1.1) |
 
 **MVP success criteria:** signup → working bot in under 15 minutes; ≥ 80 % of real visitor questions
 answered correctly in EN and FR and ≥ 75 % in Tier 2 eval languages; 0 scope-policy failures on adversarial

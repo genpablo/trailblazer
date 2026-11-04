@@ -176,7 +176,8 @@ describe("public chat", () => {
     const res = await app.inject({ method: "GET", url: `/v1/public/bots/${publicKey}` });
     expect(res.statusCode).toBe(200);
     const bot = res.json().bot;
-    expect(bot.businessName).toBe("Harbour Inn Assistant");
+    // New assistants start with the business's name in their profile.
+    expect(bot.businessName).toBe("Harbour Inn");
     expect(bot.languages.map((l: { code: string; dir: string }) => `${l.code}:${l.dir}`)).toEqual([
       "en:ltr",
       "fr:ltr",
@@ -238,6 +239,48 @@ describe("public chat", () => {
 });
 
 describe("chat page, iframe and widget", () => {
+  const openDirectly = () =>
+    app.inject({ method: "GET", url: `/c/${publicKey}`, headers: { "sec-fetch-dest": "document" } });
+
+  it("keeps the web version off until the owner activates it", async () => {
+    const closed = await openDirectly();
+    expect(closed.statusCode).toBe(404);
+    expect(closed.body).toContain("isn't available");
+    // Embedding on the business's own site works without the web version.
+    const framed = await app.inject({
+      method: "GET",
+      url: `/c/${publicKey}`,
+      headers: { "sec-fetch-dest": "iframe" },
+    });
+    expect(framed.statusCode).toBe(200);
+
+    const activated = await app.inject({
+      method: "PATCH",
+      url: `/v1/tenants/${tenantId}/bots/${botId}`,
+      headers: { cookie },
+      payload: { hostedPageEnabled: true },
+    });
+    expect(activated.json().bot.hostedPageEnabled).toBe(true);
+    expect((await openDirectly()).statusCode).toBe(200);
+  });
+
+  it("can activate the web version when the assistant is created", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: `/v1/tenants/${tenantId}/bots`,
+      headers: { cookie },
+      payload: { name: "Contractor web chat", pack: "generic", hostedPageEnabled: true },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().bot.hostedPageEnabled).toBe(true);
+    const page = await app.inject({
+      method: "GET",
+      url: `/c/${res.json().keys[0].publicKey}`,
+      headers: { "sec-fetch-dest": "document" },
+    });
+    expect(page.statusCode).toBe(200);
+  });
+
   it("serves the chat page with frame-ancestors limited to the business's sites", async () => {
     const res = await app.inject({
       method: "GET",
@@ -251,7 +294,7 @@ describe("chat page, iframe and widget", () => {
     expect(res.headers["x-frame-options"]).toBeUndefined();
   });
 
-  it("can switch off the shareable link while iframes keep working", async () => {
+  it("can switch the web version off again while iframes keep working", async () => {
     await app.inject({
       method: "PATCH",
       url: `/v1/tenants/${tenantId}/bots/${botId}`,

@@ -53,6 +53,7 @@ export default function BotPage() {
           <h1 className="text-xl font-semibold">{bot.name}</h1>
           <p className="muted text-sm">
             {detail.pack?.name ?? bot.pack} · {t(`bots.status.${bot.status}`)} · {bot.languages.join(", ")}
+            {bot.hostedPageEnabled && ` · ${t("bots.webOn")}`}
           </p>
         </div>
         <div className="flex items-center gap-3">

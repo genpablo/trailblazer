@@ -151,6 +151,8 @@ describe("tenants and bots", () => {
     expect(body.bot.languages).toEqual(["en", "fr", "zh-Hans", "ar"]);
     expect(body.bot.defaultLanguage).toBe("en");
     expect(body.profile.botId).toBe(body.bot.id);
+    expect(body.profile.businessName).toBe("Café Boréal");
+    expect(body.bot.hostedPageEnabled).toBe(false);
     expect(body.keys[0].publicKey).toMatch(/^pk_test_/);
     expect(body.keys[0].allowedOrigins).toEqual(["https://cafe-boreal.example"]);
 

@@ -59,6 +59,8 @@ export const createBotSchema = z
     languages: languagesList.optional(),
     defaultLanguage: languageCode.optional(),
     allowedOrigins: z.array(httpUrl).max(20).optional(),
+    /** Activate the web version (chat page by link/QR code) right away, e.g. for businesses without a website. */
+    hostedPageEnabled: z.boolean().optional(),
   })
   .refine((b) => !b.defaultLanguage || !b.languages || b.languages.includes(b.defaultLanguage), {
     message: "defaultLanguage must be one of languages",

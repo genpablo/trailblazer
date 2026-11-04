@@ -36,6 +36,13 @@
       "when": 1793814487717,
       "tag": "0004_knowledge_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793819300973,
+      "tag": "0005_web_version_opt_in",
+      "breakpoints": true
     }
   ]
 }

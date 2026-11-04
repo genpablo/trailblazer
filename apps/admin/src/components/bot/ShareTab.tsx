@@ -4,6 +4,7 @@ import { type FormEvent, useState } from "react";
 import { CopyField } from "@/components/CopyField";
 import { ApiError, api, type BotDetail } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { WebVersionCard } from "./WebVersionCard";
 
 export function ShareTab({
   detail,
@@ -52,26 +53,14 @@ export function ShareTab({
 
   return (
     <div className="flex flex-col gap-6">
-      <section className="flex flex-col gap-2">
-        <h3 className="font-medium">{t("share.link")}</h3>
-        <p className="muted text-sm">{t("share.linkHint")}</p>
-        <div className="flex items-start gap-2">
-          <div className="flex-1">
-            <CopyField value={pageUrl} label={t("share.link")} />
-          </div>
-          <a className="btn btn-ghost" href={pageUrl} target="_blank" rel="noreferrer">
-            {t("share.open")}
-          </a>
-        </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={detail.bot.hostedPageEnabled}
-            onChange={(e) => patch({ hostedPageEnabled: e.target.checked })}
-          />
-          {t("share.linkEnabled")}
-        </label>
-      </section>
+      <WebVersionCard
+        url={pageUrl}
+        name={detail.profile?.businessName ?? detail.bot.name}
+        enabled={detail.bot.hostedPageEnabled}
+        onToggle={(enabled) => patch({ hostedPageEnabled: enabled })}
+      />
+
+      <p className="muted text-sm">{t("share.websiteIntro")}</p>
 
       <section className="flex flex-col gap-2">
         <h3 className="font-medium">{t("share.widget")}</h3>
