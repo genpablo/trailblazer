@@ -15,15 +15,16 @@
     "@fastify/cookie": "11.1.5",
     "@fastify/helmet": "13.2.0",
     "@fastify/rate-limit": "11.2.2",
+    "@traiblazer/appearance": "workspace:*",
     "@traiblazer/core": "workspace:*",
     "@traiblazer/db": "workspace:*",
-    "@traiblazer/appearance": "workspace:*",
     "@traiblazer/i18n": "workspace:*",
     "@traiblazer/industry-packs": "workspace:*",
     "@traiblazer/llm": "workspace:*",
     "@traiblazer/shared": "workspace:*",
     "drizzle-orm": "0.45.4",
     "fastify": "5.12.8",
+    "ioredis": "6.0.0",
     "zod": "4.6.7"
   },
   "devDependencies": {

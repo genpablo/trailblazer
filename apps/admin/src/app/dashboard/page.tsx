@@ -55,18 +55,25 @@ export default function DashboardPage() {
         {me.tenants.length === 0 ? (
           <p className="muted text-sm">{t("tenants.empty")}</p>
         ) : (
-          <select
-            className="input max-w-sm"
-            value={tenantId ?? ""}
-            onChange={(e) => setTenantId(e.target.value)}
-            aria-label={t("tenants.title")}
-          >
-            {me.tenants.map((tenant) => (
-              <option key={tenant.id} value={tenant.id}>
-                {tenant.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              className="input max-w-sm"
+              value={tenantId ?? ""}
+              onChange={(e) => setTenantId(e.target.value)}
+              aria-label={t("tenants.title")}
+            >
+              {me.tenants.map((tenant) => (
+                <option key={tenant.id} value={tenant.id}>
+                  {tenant.name}
+                </option>
+              ))}
+            </select>
+            {tenantId && (
+              <Link href={`/t/${tenantId}/usage`} className="btn btn-ghost">
+                {t("nav.usage")}
+              </Link>
+            )}
+          </div>
         )}
         <CreateTenantForm
           onCreated={async (id) => {

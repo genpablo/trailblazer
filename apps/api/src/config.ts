@@ -20,6 +20,10 @@ const envSchema = z.object({
   ADMIN_ORIGIN: z.url().default("http://localhost:3000"),
   /** Max chat messages per IP per minute on the public chat endpoint. */
   CHAT_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(20),
+  /** Questions per conversation before the visitor is asked to start a new one. */
+  CONVERSATION_MAX_QUESTIONS: z.coerce.number().int().positive().default(40),
+  /** Shared rate limits and counters across API servers. Without it, limits are per server. */
+  REDIS_URL: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

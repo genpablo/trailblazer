@@ -52,6 +52,14 @@ const ERROR_TEXT: Record<string, string> = {
   en: "Sorry, something went wrong. Please try again in a moment.",
   fr: "Désolé, une erreur s'est produite. Veuillez réessayer dans un instant.",
 };
+/** When every AI provider route is at capacity (HTTP 429) — a temporary, shared condition. */
+const BUSY_TEXT: Record<string, string> = {
+  en: "Lots of people are asking questions right now. Please try again in a moment.",
+  fr: "Beaucoup de gens posent des questions en ce moment. Veuillez réessayer dans un instant.",
+};
+
+/** True for "too many requests" from an AI provider (Anthropic and OpenAI SDK errors carry `status`). */
+export const isCapacityError = (error: unknown) => (error as { status?: number } | null)?.status === 429;
 
 /** Sources shown under an answer: distinct web pages among the passages, best first. */
 export function citationsFrom(passages: Passage[], max = 3): Citation[] {
@@ -216,8 +224,10 @@ export async function* runChat(deps: ChatDeps, input: ChatInput): AsyncGenerator
       error: error instanceof Error ? error.message : String(error),
       botId: bot.id,
     });
-    flags.error = true;
-    const text = ERROR_TEXT[lang2]!;
+    const busy = isCapacityError(error);
+    if (busy) flags.busy = true;
+    else flags.error = true;
+    const text = (busy ? BUSY_TEXT : ERROR_TEXT)[lang2]!;
     if (!answer) yield { type: "text", text };
     answer = answer || text;
     citations = [];

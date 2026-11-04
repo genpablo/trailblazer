@@ -6,6 +6,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
 import type { AppContext } from "./context.js";
 import { HttpError } from "./lib/errors.js";
+import { MemoryLimiter } from "./lib/limiter.js";
 import { loadUser } from "./plugins/auth.js";
 import { assetRoutes } from "./routes/assets.js";
 import { authRoutes } from "./routes/auth.js";
@@ -14,8 +15,10 @@ import { catalogRoutes } from "./routes/catalog.js";
 import { knowledgeRoutes } from "./routes/knowledge.js";
 import { publicRoutes } from "./routes/public.js";
 import { tenantRoutes } from "./routes/tenants.js";
+import { usageRoutes } from "./routes/usage.js";
 
-export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
+export async function buildApp(input: AppContext): Promise<FastifyInstance> {
+  const ctx: AppContext = { ...input, limiter: input.limiter ?? new MemoryLimiter() };
   const app = Fastify({
     logger:
       ctx.config.NODE_ENV === "test"
@@ -32,7 +35,13 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   // The chat page sets its own CSP with per-bot frame-ancestors, so X-Frame-Options is off globally.
   await app.register(helmet, { contentSecurityPolicy: false, frameguard: false });
   await app.register(cookie);
-  await app.register(rateLimit, { max: 300, timeWindow: "1 minute", enableDraftSpec: true });
+  // Per-IP limits; stored in Redis when available so they add up across API servers.
+  await app.register(rateLimit, {
+    max: 300,
+    timeWindow: "1 minute",
+    enableDraftSpec: true,
+    ...(ctx.redis ? { redis: ctx.redis, nameSpace: "tb:ip:" } : {}),
+  });
 
   app.decorateRequest("user", null);
   app.decorateRequest("tenant", null);
@@ -68,6 +77,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   await app.register(async (scope) => catalogRoutes(scope));
   await app.register(async (scope) => knowledgeRoutes(scope, ctx));
   await app.register(async (scope) => assetRoutes(scope, ctx));
+  await app.register(async (scope) => usageRoutes(scope, ctx));
   await app.register(async (scope) => publicRoutes(scope, ctx));
 
   return app;

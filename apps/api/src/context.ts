@@ -1,6 +1,8 @@
 import type { Db } from "@traiblazer/db";
 import type { EmbeddingProvider, LLMGateway } from "@traiblazer/llm";
+import type { Redis } from "ioredis";
 import type { AppConfig } from "./config.js";
+import type { Limiter } from "./lib/limiter.js";
 
 export interface AppContext {
   db: Db;
@@ -9,4 +11,8 @@ export interface AppContext {
   embeddings?: EmbeddingProvider | null;
   /** Directory with the built chat page and widget (apps/chat/dist). */
   chatDistDir?: string;
+  /** Shared store for rate limits (needed with several API servers). */
+  redis?: Redis | null;
+  /** Per-business rate and concurrency limits; in-memory when not provided. */
+  limiter?: Limiter;
 }

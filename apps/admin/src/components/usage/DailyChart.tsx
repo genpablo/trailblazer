@@ -1,0 +1,157 @@
+"use client";
+
+import { useState } from "react";
+import { useI18n } from "@/lib/i18n";
+
+export interface DailyPoint {
+  date: string;
+  questions: number;
+  conversations: number;
+}
+
+/** Rounds the axis maximum up to a clean number (1, 2, 5 × 10ⁿ). */
+function niceMax(value: number): number {
+  if (value <= 4) return 4;
+  const magnitude = 10 ** Math.floor(Math.log10(value));
+  for (const step of [1, 2, 5, 10]) {
+    if (step * magnitude >= value) return step * magnitude;
+  }
+  return 10 * magnitude;
+}
+
+const parseDay = (date: string) => new Date(`${date}T12:00:00`);
+
+/**
+ * Questions per day: one series, so no legend (the title names it). Thin bars (≤ 24px) grow from
+ * one baseline with a rounded data end; hairline gridlines; each day is a focusable hit target
+ * with a tooltip; a table view carries the same numbers for screen readers and exact reading.
+ */
+export function DailyChart({ data }: { data: DailyPoint[] }) {
+  const { t, language } = useI18n();
+  const [active, setActive] = useState<number | null>(null);
+  const [showTable, setShowTable] = useState(false);
+  const max = niceMax(Math.max(...data.map((d) => d.questions), 0));
+  const ticks = [max, max / 2, 0];
+  const fmtNumber = new Intl.NumberFormat(language);
+  const fmtShort = new Intl.DateTimeFormat(language, { month: "short", day: "numeric" });
+  const total = data.reduce((sum, d) => sum + d.questions, 0);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="font-medium">{t("usage.daily")}</h3>
+        <button
+          type="button"
+          className="muted text-sm underline-offset-4 hover:underline"
+          onClick={() => setShowTable((v) => !v)}
+        >
+          {showTable ? t("usage.hideTable") : t("usage.showTable")}
+        </button>
+      </div>
+
+      {total === 0 ? (
+        <p className="muted text-sm">{t("usage.noData")}</p>
+      ) : (
+        <div className="flex gap-2" aria-hidden={showTable}>
+          {/* Y axis: clean ticks in text tokens */}
+          <div
+            className="muted flex h-40 flex-col justify-between text-end text-xs tabular-nums"
+            aria-hidden="true"
+          >
+            {ticks.map((v) => (
+              <span key={v} className="-translate-y-1/2 leading-none first:translate-y-0 last:translate-y-0">
+                {fmtNumber.format(v)}
+              </span>
+            ))}
+          </div>
+          <div className="relative flex-1">
+            {/* Hairline gridlines */}
+            <div
+              className="pointer-events-none absolute inset-0 flex flex-col justify-between"
+              aria-hidden="true"
+            >
+              {ticks.map((v) => (
+                <div key={v} className="h-px bg-[var(--grid)]" />
+              ))}
+            </div>
+            <ul
+              className="relative m-0 flex h-40 list-none items-end p-0"
+              style={{ gap: 2 }}
+              aria-label={t("usage.daily")}
+              onMouseLeave={() => setActive(null)}
+            >
+              {data.map((d, i) => {
+                const label = t("usage.dayTooltip", {
+                  date: parseDay(d.date),
+                  questions: d.questions,
+                  conversations: d.conversations,
+                });
+                return (
+                  <li key={d.date} className="relative flex h-full flex-1">
+                    {/* Hit target = the whole day column (bigger than the bar); focusable for keyboards. */}
+                    <button
+                      type="button"
+                      aria-label={label}
+                      className="flex h-full w-full cursor-default items-end justify-center rounded-sm outline-none focus-visible:bg-[var(--grid)]"
+                      onMouseEnter={() => setActive(i)}
+                      onFocus={() => setActive(i)}
+                      onBlur={() => setActive(null)}
+                    >
+                      {d.questions > 0 && (
+                        <span
+                          className="block w-full max-w-6 rounded-t bg-[var(--chart)]"
+                          style={{
+                            height: `${(d.questions / max) * 100}%`,
+                            opacity: active === null || active === i ? 1 : 0.55,
+                          }}
+                        />
+                      )}
+                    </button>
+                    {active === i && (
+                      <div
+                        role="tooltip"
+                        className="card pointer-events-none absolute bottom-full z-10 mb-1 whitespace-nowrap px-2 py-1 text-xs shadow-sm"
+                        style={i > data.length / 2 ? { right: 0 } : { left: 0 }}
+                      >
+                        {label}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            {/* X axis: a few dates, muted */}
+            <div className="muted mt-1 flex justify-between text-xs" aria-hidden="true">
+              {[0, Math.floor((data.length - 1) / 2), data.length - 1].map((i) => (
+                <span key={i}>{data[i] ? fmtShort.format(parseDay(data[i]!.date)) : ""}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTable && (
+        <div className="max-h-64 overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="muted text-start">
+              <tr>
+                <th className="py-1 text-start font-normal">{t("usage.date")}</th>
+                <th className="py-1 text-end font-normal">{t("usage.questions")}</th>
+                <th className="py-1 text-end font-normal">{t("usage.conversations")}</th>
+              </tr>
+            </thead>
+            <tbody className="tabular-nums">
+              {[...data].reverse().map((d) => (
+                <tr key={d.date} className="border-t border-[var(--border)]">
+                  <td className="py-1">{fmtShort.format(parseDay(d.date))}</td>
+                  <td className="py-1 text-end">{fmtNumber.format(d.questions)}</td>
+                  <td className="py-1 text-end">{fmtNumber.format(d.conversations)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}

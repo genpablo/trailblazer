@@ -8,6 +8,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -66,6 +67,10 @@ export const tenants = pgTable("tenants", {
   ownerLanguage: text("owner_language").notNull().default("en"),
   /** "default" or "canada" (data residency, Phase 3). */
   dataRegion: text("data_region").notNull().default("default"),
+  /** Owner's own monthly question cap (cost control); never above the plan's allowance. Null = plan limit. */
+  monthlyQuestionLimit: integer("monthly_question_limit"),
+  /** Max questions one visitor may ask per day across this business's assistants. Null = default. */
+  visitorDailyLimit: integer("visitor_daily_limit"),
   ...timestamps,
 });
 
@@ -420,6 +425,7 @@ export const conversations = pgTable(
   },
   (t) => [
     index("conversations_bot_last_idx").on(t.tenantId, t.botId, t.lastMessageAt),
+    index("conversations_visitor_idx").on(t.tenantId, t.visitorId),
     unique("conversations_id_tenant_uq").on(t.id, t.tenantId),
     foreignKey({
       name: "conversations_bot_tenant_fk",
@@ -441,6 +447,8 @@ export interface MessageFlags {
   /** The model or the fallback chain declined. */
   refused?: boolean;
   error?: boolean;
+  /** Every AI provider route was at capacity; the visitor was asked to try again shortly. */
+  busy?: boolean;
 }
 
 export const messages = pgTable(
@@ -469,6 +477,7 @@ export const messages = pgTable(
   },
   (t) => [
     index("messages_conversation_idx").on(t.conversationId, t.createdAt),
+    index("messages_tenant_created_idx").on(t.tenantId, t.createdAt),
     foreignKey({
       name: "messages_conversation_tenant_fk",
       columns: [t.conversationId, t.tenantId],
@@ -493,6 +502,29 @@ export const usageEvents = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("usage_events_tenant_created_idx").on(t.tenantId, t.createdAt)],
+);
+
+/**
+ * Monthly question counter per business, used to enforce quotas atomically (one row per month,
+ * period "YYYY-MM" in the platform's reporting time zone) and to report refused questions.
+ */
+export const usageCounters = pgTable(
+  "usage_counters",
+  {
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    period: text("period").notNull(),
+    questions: integer("questions").notNull().default(0),
+    /** Refused because the monthly limit was reached. */
+    blockedQuota: integer("blocked_quota").notNull().default(0),
+    /** Refused because too many questions at once / per minute for this business (busy). */
+    blockedBusy: integer("blocked_busy").notNull().default(0),
+    /** Refused by per-visitor or per-conversation limits (abuse protection). */
+    blockedVisitor: integer("blocked_visitor").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ name: "usage_counters_pk", columns: [t.tenantId, t.period] })],
 );
 
 // ---------------------------------------------------------------------------------------------
@@ -550,6 +582,7 @@ export const assets = pgTable(
 
 /** Tables protected by row-level security. Keep in sync with migrations. */
 export const rlsTables = [
+  "usage_counters",
   "assets",
   "bots",
   "bot_keys",

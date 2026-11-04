@@ -474,3 +474,9 @@ body {
 body:has(.tb-shell[data-theme="midnight"]) {
   background: #0f0f11;
 }
+
+/* Limit and "busy" notices: calm, informative, not an error. */
+.tb-notice {
+  background: color-mix(in srgb, var(--tb-accent) 8%, var(--tb-surface));
+  border-color: color-mix(in srgb, var(--tb-accent) 35%, transparent);
+}

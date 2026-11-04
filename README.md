@@ -90,6 +90,12 @@ CI (`.github/workflows/ci.yml`) runs the same steps against the docker-compose s
 - Website crawling blocks private/loopback/metadata addresses on every request and redirect (SSRF)
   and respects robots.txt.
 - Public chat: same-origin only, rate-limited per IP, visitors can only restore their own conversation.
+- Limits before any AI cost (`apps/api/src/lib/chat-guard.ts`): questions per visitor per day, questions per
+  conversation, per-business questions per minute and concurrent answers (noisy neighbours), and the monthly
+  question limit (plan allowance in `packages/shared/src/plans.ts`, owner can set lower). Refused questions get a
+  translated message in the chat and are counted on the admin **Usage** page.
+- Set `REDIS_URL` (as in `.env.example`) so rate limits and per-business limits are shared by all API servers;
+  without it they're kept per server, which is fine for a single server.
 - Retrieved website text is treated as data, never instructions; platform rules (grounding, no
   professional advice, emergencies) come first in the prompt and can't be overridden by owners.
 

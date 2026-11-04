@@ -453,7 +453,14 @@ All tables carry `tenant_id` with RLS.
 - **AODA:** WCAG 2.1 AA for widget and admin, in every UI language (incl. RTL)
 - **Scope policy (§5):** locked rule, classifier, output checks, disclaimers, ToS — reviewed by a lawyer before Phase 3
 - **PHIPA (Phase 3, clinics):** Canada-only data + LLM routing, no health details collected, retention limits
-- Widget abuse: origin allowlist, rate limits, caps, optional Cloudflare Turnstile
+- **Abuse, quotas and noisy neighbours** (built): per-IP rate limit (Redis-backed across servers);
+  per-visitor daily question limit (owner-adjustable, default 30); per-conversation cap (40 questions, then
+  "start a new conversation"); monthly question limit per business (plan allowance, owner can set lower;
+  counted atomically). Per-business questions-per-minute and concurrent-answer caps keep one busy business from
+  slowing others — visitors see "Lots of people are asking questions right now", also shown when every AI
+  provider is at capacity. Refusals are counted and shown on the admin **Usage** page (monthly meter, daily
+  chart, by assistant/channel, estimated AI cost for owners/admins). Later: Cloudflare Turnstile on suspicious
+  traffic, email alerts at 80 % / 100 %.
 - Prompt injection: retrieved content and visitor text are data; server-side tool validation; works in all languages
 - Uploads: type/size limits, malware scan, private storage
 
@@ -486,7 +493,7 @@ public API, AI add-ons (review replies, social posts in multiple languages).
 | **1.1 Chat end-to-end** | Knowledge tables + RLS; LLM gateway (Claude via Anthropic SDK, OpenAI-compatible adapter for OpenRouter & others, offline test provider); background jobs; website crawl, text and Q&A sources; full-text + trigram retrieval (vector search when an embedding provider is configured); query translation for non-EN/FR questions; streaming answers with sources; conversation logging + usage metering; **hosted chat page, inline iframe and floating widget**; admin: knowledge sources, playground, share link & embed codes |
 | 1.2 Modules | Lead capture & handoff (tools), hours & "open now", notices, booking/ordering links, age gate, safety escalation; scope guard classifier |
 | 1.3 Content | PDF/DOCX upload, menu photos (vision OCR), auto-filled business profile; pack content for the 7 launch packs |
-| 1.4 Launch readiness | Plan limits & quotas, evals EN/FR + Tier 2 answers, prospect demo generator, accessibility pass (web version + QR codes delivered with 1.1) |
+| 1.4 Launch readiness | Evals EN/FR + Tier 2 answers, prospect demo generator, accessibility pass, billing hook-up of plans (web version + QR codes, plan limits, quotas, abuse protection and usage page already delivered) |
 
 **MVP success criteria:** signup → working bot in under 15 minutes; ≥ 80 % of real visitor questions
 answered correctly in EN and FR and ≥ 75 % in Tier 2 eval languages; 0 scope-policy failures on adversarial

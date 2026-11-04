@@ -9,6 +9,13 @@
   --accent: #1f6f5c;
   --accent-text: #ffffff;
   --danger: #b42318;
+  /* Charts: series color validated for this surface (dataviz validator), hairline grid. */
+  --chart: #1baf7a;
+  --grid: #ececea;
+  /* Status (fixed, never reused as a series color; always with icon + label). */
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-critical: #d03b3b;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -21,6 +28,8 @@
     --accent: #4fb39a;
     --accent-text: #0d1f1a;
     --danger: #f97066;
+    --chart: #199e70;
+    --grid: #2a2a28;
   }
 }
 

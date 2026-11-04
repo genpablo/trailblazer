@@ -14,6 +14,35 @@ interface Message {
   citations: Citation[];
   pending?: boolean;
   error?: boolean;
+  /** A limit or "busy" message (not an error). */
+  notice?: boolean;
+}
+
+/** Friendly text for a refused question, with the business's contact details where helpful. */
+function refusalText(code: string, lang: string, config: PublicBotConfig): string | null {
+  const business = config.businessName;
+  // Rendered as a short list by the Markdown component.
+  const contact = [
+    config.contact.phone && `- ${ui(lang, "phone")}: ${config.contact.phone}`,
+    config.contact.email && `- ${ui(lang, "email")}: ${config.contact.email}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const withContact = (text: string) => (contact ? `${text}\n\n${contact}` : text);
+  switch (code) {
+    case "quota":
+      return withContact(ui(lang, "limitQuota", { business }));
+    case "visitor":
+      return withContact(ui(lang, "limitVisitor", { business }));
+    case "conversation":
+      return ui(lang, "limitConversation");
+    case "busy":
+      return ui(lang, "busy");
+    case "slowDown":
+      return ui(lang, "slowDown");
+    default:
+      return null;
+  }
 }
 
 export interface AppProps {
@@ -123,11 +152,14 @@ export function App({ publicKey, mode, pageUrl, preview = false }: AppProps) {
         } else if (event.type === "done") {
           update((m) => ({ ...m, pending: false, citations: event.citations }));
         } else {
+          const notice = refusalText(event.code, lang, config);
           update((m) => ({
             ...m,
             pending: false,
-            error: true,
-            content: ui(lang, event.code === "unavailable" ? "unavailable" : "error"),
+            // Limits and "busy" are expected situations, shown as a calm notice rather than an error.
+            notice: Boolean(notice),
+            error: !notice,
+            content: notice ?? ui(lang, event.code === "unavailable" ? "unavailable" : "error"),
           }));
         }
       }
@@ -260,7 +292,7 @@ export function App({ publicKey, mode, pageUrl, preview = false }: AppProps) {
       <div class="tb-log" ref={logRef} role="log" aria-live="polite" aria-relevant="additions">
         {assistantRow(undefined, "tb-msg tb-assistant", <Markdown text={greeting} />)}
         {messages.map((m) => {
-          const className = `tb-msg tb-${m.role}${m.error ? " tb-error" : ""}`;
+          const className = `tb-msg tb-${m.role}${m.error ? " tb-error" : ""}${m.notice ? " tb-notice" : ""}`;
           if (m.role === "user") {
             return (
               <div key={m.id} class={className} dir="auto">

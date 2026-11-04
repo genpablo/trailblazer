@@ -17,6 +17,7 @@ export interface PublicBotConfig {
   greeting: Record<string, string>;
   quickReplies: Record<string, string[]>;
   poweredBy: boolean;
+  contact: { phone: string | null; email: string | null };
 }
 
 export interface Citation {
@@ -69,11 +70,10 @@ export async function* streamChat(body: {
   });
   if (!res.ok || !res.body) {
     const data = await res.json().catch(() => ({}));
-    yield {
-      type: "error",
-      code: data.error ?? String(res.status),
-      message: data.message ?? "Request failed",
-    };
+    const known = ["quota", "busy", "visitor", "conversation", "not_found"];
+    // Any other 429 is the per-IP flood protection: the visitor is typing too fast.
+    const code = known.includes(data.error) ? data.error : res.status === 429 ? "slowDown" : "failed";
+    yield { type: "error", code, message: data.message ?? "Request failed" };
     return;
   }
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();

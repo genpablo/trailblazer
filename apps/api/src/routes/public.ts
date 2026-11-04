@@ -27,9 +27,18 @@ import { publicChatSchema } from "@traiblazer/shared";
 import { and, asc, eq } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { AppContext } from "../context.js";
+import { admitQuestion, type RefusalReason } from "../lib/chat-guard.js";
 import { HttpError, notFound } from "../lib/errors.js";
 import { isUuid } from "../lib/ids.js";
 import { publicAssetUrl } from "./assets.js";
+
+/** English fallback text; the chat page shows its own translated message for each code. */
+const REFUSAL_MESSAGES: Record<RefusalReason, string> = {
+  quota: "This assistant has reached its question limit for this month.",
+  busy: "Lots of people are asking questions right now. Please try again in a moment.",
+  visitor: "You've reached today's question limit for this assistant.",
+  conversation: "This conversation is very long. Please start a new conversation.",
+};
 
 const KEY_RE = /^pk_(live|test)_[A-Za-z0-9_-]{10,64}$/;
 
@@ -173,6 +182,8 @@ export async function publicRoutes(app: FastifyInstance, ctx: AppContext) {
         name: bot.name,
         businessName,
         appearance: toPublicAppearance(settings, businessName, config.PUBLIC_URL),
+        // Public business contact, shown when the assistant can't answer (e.g. monthly limit reached).
+        contact: { phone: profile?.phone ?? null, email: profile?.email ?? null },
         defaultLanguage: bot.defaultLanguage,
         languages: bot.languages.map((code) => {
           const lang = getLanguage(code);
@@ -199,6 +210,22 @@ export async function publicRoutes(app: FastifyInstance, ctx: AppContext) {
       const input = publicChatSchema.parse(request.body);
       const found = await loadBot(input.publicKey);
       if (!found || found.bot.status === "paused") throw notFound("Assistant");
+
+      // Abuse, noisy-neighbour and monthly limits, before any AI cost is incurred.
+      const admission = await admitQuestion(
+        { db, limiter: ctx.limiter!, maxConversationQuestions: config.CONVERSATION_MAX_QUESTIONS },
+        {
+          tenantId: found.tenantId,
+          visitorId: input.visitorId,
+          conversationId: input.conversationId ?? null,
+        },
+      );
+      if (!admission.ok) {
+        return reply
+          .code(429)
+          .header("retry-after", admission.reason === "busy" ? "30" : "3600")
+          .send({ error: admission.reason, message: REFUSAL_MESSAGES[admission.reason] });
+      }
 
       const controller = new AbortController();
       reply.hijack();
@@ -244,6 +271,7 @@ export async function publicRoutes(app: FastifyInstance, ctx: AppContext) {
         }
       } finally {
         res.end();
+        await admission.release();
       }
     },
   );
