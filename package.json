@@ -1,0 +1,26 @@
+{
+  "name": "traiblazer",
+  "private": true,
+  "packageManager": "pnpm@10.34.9",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test --concurrency=1",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:generate": "pnpm --filter @traiblazer/db generate",
+    "db:migrate": "pnpm --filter @traiblazer/db migrate",
+    "db:seed": "pnpm --filter @traiblazer/db seed"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.5",
+    "turbo": "2.11.10",
+    "typescript": "~6.0.3"
+  }
+}
