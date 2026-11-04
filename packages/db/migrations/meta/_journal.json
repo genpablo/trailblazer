@@ -78,6 +78,13 @@
       "when": 1793830265507,
       "tag": "0010_usage_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793830569020,
+      "tag": "0011_operator_console",
+      "breakpoints": true
     }
   ]
 }

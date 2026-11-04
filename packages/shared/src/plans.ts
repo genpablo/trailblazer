@@ -56,10 +56,81 @@ export const MAX_CONVERSATION_QUESTIONS = 40;
 export const REPORTING_TIME_ZONE = "America/Toronto";
 
 /** The monthly limit in force: the owner's own cap, never above the plan's allowance. */
-export function effectiveMonthlyLimit(plan: string, ownerLimit: number | null | undefined): number {
-  const planMax = planLimits(plan).monthlyQuestions;
-  return ownerLimit ? Math.min(ownerLimit, planMax) : planMax;
+export function effectiveMonthlyLimit(
+  planMonthlyQuestions: number,
+  ownerLimit: number | null | undefined,
+): number {
+  return ownerLimit ? Math.min(ownerLimit, planMonthlyQuestions) : planMonthlyQuestions;
 }
+
+// ---- Operator console: plans and platform policies -------------------------------------------
+// Plans and policies live in the database (operators edit them); the constants above are the
+// seed values and the fallback if the database has no row.
+
+/** Platform-wide policies set by operators. */
+export interface PlatformPolicies {
+  /** Plan given to newly created businesses. */
+  defaultPlan: string;
+  /** Default questions per visitor per day (businesses can set their own). */
+  visitorDailyLimit: number;
+  /** Questions per conversation before the visitor is asked to start a new one. */
+  conversationMaxQuestions: number;
+  /** Chat messages per IP address per minute (flood protection). */
+  chatIpPerMinute: number;
+  /** Highest industry-pack rollout phase businesses can choose (1 = launch packs). */
+  releasedPackPhase: number;
+}
+
+export const DEFAULT_POLICIES: PlatformPolicies = {
+  defaultPlan: "trial",
+  visitorDailyLimit: DEFAULT_VISITOR_DAILY_LIMIT,
+  conversationMaxQuestions: MAX_CONVERSATION_QUESTIONS,
+  chatIpPerMinute: 20,
+  releasedPackPhase: 1,
+};
+
+/** Database keys (snake_case) for each policy. */
+export const POLICY_KEYS: Record<keyof PlatformPolicies, string> = {
+  defaultPlan: "default_plan",
+  visitorDailyLimit: "visitor_daily_limit",
+  conversationMaxQuestions: "conversation_max_questions",
+  chatIpPerMinute: "chat_ip_per_minute",
+  releasedPackPhase: "released_pack_phase",
+};
+
+export const updatePoliciesSchema = z
+  .object({
+    defaultPlan: z.string().regex(/^[a-z0-9_]{2,40}$/),
+    visitorDailyLimit: z.number().int().min(1).max(1000),
+    conversationMaxQuestions: z.number().int().min(2).max(500),
+    chatIpPerMinute: z.number().int().min(1).max(600),
+    releasedPackPhase: z.number().int().min(1).max(4),
+  })
+  .partial();
+
+const planFields = {
+  nameEn: z.string().trim().min(1).max(60),
+  nameFr: z.string().trim().min(1).max(60),
+  monthlyQuestions: z.number().int().min(1).max(10_000_000),
+  concurrent: z.number().int().min(1).max(1000),
+  perMinute: z.number().int().min(1).max(100_000),
+  priceMonthlyCents: z.number().int().min(0).max(100_000_000).nullable(),
+  active: z.boolean(),
+  sortOrder: z.number().int().min(0).max(10_000),
+};
+
+export const createPlanSchema = z.object({
+  id: z.string().regex(/^[a-z0-9_]{2,40}$/, "Use lowercase letters, digits and _"),
+  ...planFields,
+  priceMonthlyCents: planFields.priceMonthlyCents.optional(),
+  active: planFields.active.optional(),
+  sortOrder: planFields.sortOrder.optional(),
+});
+export const updatePlanSchema = z.object(planFields).partial();
+
+export const operatorTenantUpdateSchema = z
+  .object({ plan: z.string().regex(/^[a-z0-9_]{2,40}$/), status: z.enum(["active", "suspended"]) })
+  .partial();
 
 export const updateLimitsSchema = z
   .object({

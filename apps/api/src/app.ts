@@ -7,18 +7,24 @@ import { ZodError } from "zod";
 import type { AppContext } from "./context.js";
 import { HttpError } from "./lib/errors.js";
 import { MemoryLimiter } from "./lib/limiter.js";
+import { PlatformConfig } from "./lib/platform.js";
 import { loadUser } from "./plugins/auth.js";
 import { assetRoutes } from "./routes/assets.js";
 import { authRoutes } from "./routes/auth.js";
 import { botRoutes } from "./routes/bots.js";
 import { catalogRoutes } from "./routes/catalog.js";
 import { knowledgeRoutes } from "./routes/knowledge.js";
+import { operatorRoutes } from "./routes/operator.js";
 import { publicRoutes } from "./routes/public.js";
 import { tenantRoutes } from "./routes/tenants.js";
 import { usageRoutes } from "./routes/usage.js";
 
 export async function buildApp(input: AppContext): Promise<FastifyInstance> {
-  const ctx: AppContext = { ...input, limiter: input.limiter ?? new MemoryLimiter() };
+  const ctx: AppContext = {
+    ...input,
+    limiter: input.limiter ?? new MemoryLimiter(),
+    platform: input.platform ?? new PlatformConfig(input.db, input.config.PLATFORM_CACHE_SECONDS * 1000),
+  };
   const app = Fastify({
     logger:
       ctx.config.NODE_ENV === "test"
@@ -74,10 +80,11 @@ export async function buildApp(input: AppContext): Promise<FastifyInstance> {
   await app.register(async (scope) => authRoutes(scope, ctx));
   await app.register(async (scope) => tenantRoutes(scope, ctx));
   await app.register(async (scope) => botRoutes(scope, ctx));
-  await app.register(async (scope) => catalogRoutes(scope));
+  await app.register(async (scope) => catalogRoutes(scope, ctx));
   await app.register(async (scope) => knowledgeRoutes(scope, ctx));
   await app.register(async (scope) => assetRoutes(scope, ctx));
   await app.register(async (scope) => usageRoutes(scope, ctx));
+  await app.register(async (scope) => operatorRoutes(scope, ctx));
   await app.register(async (scope) => publicRoutes(scope, ctx));
 
   return app;

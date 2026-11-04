@@ -1,6 +1,7 @@
 /**
  * Local demo data: one owner account, one business, one restaurant assistant.
  * Runs as the owner role (DATABASE_URL). Safe to re-run: skips if the demo user exists.
+ * The demo user is also a platform operator, so the operator console works locally.
  */
 import { botKeys, bots, businessProfiles, createDb, memberships, tenants, users } from "@traiblazer/db";
 import { eq } from "drizzle-orm";
@@ -16,12 +17,19 @@ const { db, close } = createDb(url, { max: 1 });
 try {
   const [existing] = await db.select().from(users).where(eq(users.email, DEMO_EMAIL)).limit(1);
   if (existing) {
-    console.log(`Demo user already exists: ${DEMO_EMAIL}`);
+    if (!existing.isOperator)
+      await db.update(users).set({ isOperator: true }).where(eq(users.id, existing.id));
+    console.log(`Demo user already exists: ${DEMO_EMAIL} (operator)`);
   } else {
     await db.transaction(async (tx) => {
       const [user] = await tx
         .insert(users)
-        .values({ email: DEMO_EMAIL, name: "Demo Owner", passwordHash: await hashPassword(DEMO_PASSWORD) })
+        .values({
+          email: DEMO_EMAIL,
+          name: "Demo Owner",
+          passwordHash: await hashPassword(DEMO_PASSWORD),
+          isOperator: true,
+        })
         .returning();
       const [tenant] = await tx
         .insert(tenants)

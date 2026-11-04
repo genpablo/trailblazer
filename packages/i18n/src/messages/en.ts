@@ -130,6 +130,7 @@ export const en = {
   "conversations.empty": "No conversations yet.",
   "conversations.messages": "{count, plural, one {# message} other {# messages}}",
   "nav.usage": "Usage",
+  "nav.operator": "Operator console",
   "usage.title": "Usage",
   "usage.thisMonth": "Questions this month",
   "usage.resets": "Resets on {date, date, long}",

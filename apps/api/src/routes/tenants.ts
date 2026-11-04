@@ -10,7 +10,7 @@ import { requireTenantRole, requireUser } from "../plugins/auth.js";
 
 type TenantParams = { Params: { tenantId: string } };
 
-export async function tenantRoutes(app: FastifyInstance, { db }: AppContext) {
+export async function tenantRoutes(app: FastifyInstance, { db, platform }: AppContext) {
   app.get("/v1/tenants", { preHandler: requireUser }, async (request) => {
     const rows = await db
       .select({
@@ -30,6 +30,9 @@ export async function tenantRoutes(app: FastifyInstance, { db }: AppContext) {
   app.post("/v1/tenants", { preHandler: requireUser }, async (request, reply) => {
     const input = createTenantSchema.parse(request.body);
     const user = request.user!;
+    // New businesses start on the operators' default plan (if it is still offered).
+    const [policies, allPlans] = await Promise.all([platform!.policies(), platform!.plans()]);
+    const plan = allPlans.find((p) => p.id === policies.defaultPlan && p.active)?.id ?? "trial";
 
     const tenant = await db.transaction(async (tx) => {
       const [created] = await tx
@@ -37,6 +40,7 @@ export async function tenantRoutes(app: FastifyInstance, { db }: AppContext) {
         .values({
           name: input.name,
           slug: slugify(input.name),
+          plan,
           ownerLanguage: input.ownerLanguage ?? user.uiLanguage,
         })
         .returning();

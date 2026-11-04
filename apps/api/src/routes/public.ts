@@ -19,6 +19,7 @@ import {
   conversations,
   messages,
   resolveBotKey,
+  tenants,
   withTenant,
 } from "@traiblazer/db";
 import { getLanguage } from "@traiblazer/i18n";
@@ -96,6 +97,13 @@ export async function publicRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!KEY_RE.test(publicKey)) return null;
     const resolved = await resolveBotKey(db, publicKey);
     if (!resolved) return null;
+    // A business suspended by operators is invisible to visitors (page, widget and chat).
+    const [tenant] = await db
+      .select({ status: tenants.status })
+      .from(tenants)
+      .where(eq(tenants.id, resolved.tenantId))
+      .limit(1);
+    if (tenant?.status !== "active") return null;
     return withTenant(db, resolved.tenantId, async (tx) => {
       const [bot] = await tx.select().from(bots).where(eq(bots.id, resolved.botId)).limit(1);
       if (!bot) return null;
@@ -204,7 +212,15 @@ export async function publicRoutes(app: FastifyInstance, ctx: AppContext) {
 
   app.post(
     "/v1/public/chat",
-    { config: { rateLimit: { max: config.CHAT_RATE_LIMIT_PER_MIN, timeWindow: "1 minute" } } },
+    {
+      config: {
+        rateLimit: {
+          // Operator policy (operator console), unless overridden by CHAT_RATE_LIMIT_PER_MIN.
+          max: async () => config.CHAT_RATE_LIMIT_PER_MIN ?? (await ctx.platform!.policies()).chatIpPerMinute,
+          timeWindow: "1 minute",
+        },
+      },
+    },
     async (request, reply: FastifyReply) => {
       assertSameOrigin(request.headers.origin);
       const input = publicChatSchema.parse(request.body);
@@ -213,7 +229,12 @@ export async function publicRoutes(app: FastifyInstance, ctx: AppContext) {
 
       // Abuse, noisy-neighbour and monthly limits, before any AI cost is incurred.
       const admission = await admitQuestion(
-        { db, limiter: ctx.limiter!, maxConversationQuestions: config.CONVERSATION_MAX_QUESTIONS },
+        {
+          db,
+          limiter: ctx.limiter!,
+          platform: ctx.platform!,
+          maxConversationQuestions: config.CONVERSATION_MAX_QUESTIONS,
+        },
         {
           tenantId: found.tenantId,
           visitorId: input.visitorId,

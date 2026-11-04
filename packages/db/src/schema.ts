@@ -57,12 +57,41 @@ const timestamps = {
 // Platform tables (no RLS)
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * Plans, managed by platform operators in the operator console. Allowances are enforced by the chat
+ * guard; prices are for display (billing comes later).
+ */
+export const plans = pgTable("plans", {
+  id: text("id").primaryKey(),
+  nameEn: text("name_en").notNull(),
+  nameFr: text("name_fr").notNull(),
+  /** Visitor questions answered per calendar month. */
+  monthlyQuestions: integer("monthly_questions").notNull(),
+  /** Answers generated at the same time for one business. */
+  concurrent: integer("concurrent").notNull(),
+  /** Questions per minute for one business (all visitors together). */
+  perMinute: integer("per_minute").notNull(),
+  /** Monthly price in CAD cents, for display. */
+  priceMonthlyCents: integer("price_monthly_cents"),
+  /** Archived plans keep working for existing businesses but can't be assigned anymore. */
+  active: boolean("active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  ...timestamps,
+});
+
+export const tenantStatuses = ["active", "suspended"] as const;
+export type TenantStatus = (typeof tenantStatuses)[number];
+
 export const tenants = pgTable("tenants", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
-  plan: text("plan").notNull().default("trial"),
-  status: text("status").notNull().default("active"),
+  plan: text("plan")
+    .notNull()
+    .default("trial")
+    .references(() => plans.id, { onUpdate: "cascade", onDelete: "restrict" }),
+  /** "suspended" turns the business's assistants off for visitors (set by operators). */
+  status: text("status").$type<TenantStatus>().notNull().default("active"),
   /** Language the business owner reads (inbox translations go into this language). */
   ownerLanguage: text("owner_language").notNull().default("en"),
   /** "default" or "canada" (data residency, Phase 3). */
@@ -82,8 +111,36 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   uiLanguage: text("ui_language").notNull().default("en"),
   emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+  /**
+   * Platform operator (Traiblazer staff): can open the operator console. Only granted from the
+   * command line (`pnpm --filter @traiblazer/api operator:grant <email>`), never through the API.
+   */
+  isOperator: boolean("is_operator").notNull().default(false),
   ...timestamps,
 });
+
+/** Platform-wide policies (key → JSON value), managed in the operator console. */
+export const platformSettings = pgTable("platform_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").$type<unknown>().notNull(),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Who changed what in the operator console (plans, policies, business plan/status). */
+export const operatorAuditLogs = pgTable(
+  "operator_audit_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    action: text("action").notNull(),
+    targetType: text("target_type"),
+    targetId: text("target_id"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("operator_audit_logs_created_idx").on(t.createdAt)],
+);
 
 export const sessions = pgTable(
   "sessions",

@@ -42,6 +42,11 @@ export default function DashboardPage() {
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-xl font-semibold">{t("app.name")}</h1>
         <div className="flex items-center gap-4">
+          {me.user.isOperator && (
+            <Link href="/operator" className="text-sm underline">
+              {t("nav.operator")}
+            </Link>
+          )}
           <span className="muted text-sm">{me.user.name}</span>
           <LanguageSwitcher />
           <button className="btn btn-ghost" type="button" onClick={signOut}>

@@ -9,6 +9,8 @@ export interface SessionUser {
   email: string;
   name: string;
   uiLanguage: string;
+  /** Platform operator (read fresh on every request, so revoking takes effect immediately). */
+  isOperator: boolean;
 }
 
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
@@ -33,7 +35,13 @@ export async function createSession(
 
 export async function getSessionUser(db: Db, token: string): Promise<SessionUser | null> {
   const rows = await db
-    .select({ id: users.id, email: users.email, name: users.name, uiLanguage: users.uiLanguage })
+    .select({
+      id: users.id,
+      email: users.email,
+      name: users.name,
+      uiLanguage: users.uiLanguage,
+      isOperator: users.isOperator,
+    })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
     .where(and(eq(sessions.tokenHash, hashToken(token)), gt(sessions.expiresAt, new Date())))

@@ -275,7 +275,13 @@ One chat web app (`apps/chat`) powers every surface. Customers pick what fits th
 
 ### 7.3 Operator console
 
-- Tenants, plans, usage, **LLM cost per tenant** (chat + translation calls); limits; audited impersonation
+- **Delivered (`/operator` in the admin app, staff only):** overview (businesses, assistants, questions,
+  refusals, AI cost this month); businesses (search, change plan, suspend/reactivate, usage and cost per
+  business); plans (create, edit allowances and prices, archive); platform policies (default plan for new
+  businesses, released industry phase, per-visitor/per-conversation/per-IP limits); audit trail of every change.
+  Plans and policies live in the database and apply within 30 seconds. Operator access is granted only from
+  the command line (`pnpm --filter @traiblazer/api operator grant <email>`), never through the API.
+- Later: audited impersonation
 - Packs/variants/modules (versioned) with eval results per language
 - **Prospect demo generator:** build a private demo bot from a prospect's public website
 - System health: ingestion queue, errors, latency, provider fallbacks, scope-classifier triggers
@@ -493,7 +499,7 @@ public API, AI add-ons (review replies, social posts in multiple languages).
 | **1.1 Chat end-to-end** | Knowledge tables + RLS; LLM gateway (Claude via Anthropic SDK, OpenAI-compatible adapter for OpenRouter & others, offline test provider); background jobs; website crawl, text and Q&A sources; full-text + trigram retrieval (vector search when an embedding provider is configured); query translation for non-EN/FR questions; streaming answers with sources; conversation logging + usage metering; **hosted chat page, inline iframe and floating widget**; admin: knowledge sources, playground, share link & embed codes |
 | 1.2 Modules | Lead capture & handoff (tools), hours & "open now", notices, booking/ordering links, age gate, safety escalation; scope guard classifier |
 | 1.3 Content | PDF/DOCX upload, menu photos (vision OCR), auto-filled business profile; pack content for the 7 launch packs |
-| 1.4 Launch readiness | Evals EN/FR + Tier 2 answers, prospect demo generator, accessibility pass, billing hook-up of plans (web version + QR codes, plan limits, quotas, abuse protection and usage page already delivered) |
+| 1.4 Launch readiness | Evals EN/FR + Tier 2 answers, prospect demo generator, accessibility pass, billing hook-up of plans (web version + QR codes, plan limits, quotas, abuse protection, usage page and operator console with editable plans/policies already delivered) |
 
 **MVP success criteria:** signup → working bot in under 15 minutes; ≥ 80 % of real visitor questions
 answered correctly in EN and FR and ≥ 75 % in Tier 2 eval languages; 0 scope-policy failures on adversarial

@@ -1,12 +1,8 @@
 import { conversations, type Db, messages, tenants, usageCounters, withTenant } from "@traiblazer/db";
-import {
-  DEFAULT_VISITOR_DAILY_LIMIT,
-  effectiveMonthlyLimit,
-  planLimits,
-  REPORTING_TIME_ZONE,
-} from "@traiblazer/shared";
+import { effectiveMonthlyLimit, REPORTING_TIME_ZONE } from "@traiblazer/shared";
 import { and, eq, gt, sql } from "drizzle-orm";
 import type { Limiter } from "./limiter.js";
+import type { PlatformConfig } from "./platform.js";
 
 export type RefusalReason = "quota" | "busy" | "visitor" | "conversation";
 
@@ -49,7 +45,13 @@ async function recordRefusal(db: Db, tenantId: string, reason: RefusalReason): P
  * On success the caller must call `release()` when the answer is finished.
  */
 export async function admitQuestion(
-  deps: { db: Db; limiter: Limiter; maxConversationQuestions: number },
+  deps: {
+    db: Db;
+    limiter: Limiter;
+    platform: PlatformConfig;
+    /** Override of the operator policy (tests). */
+    maxConversationQuestions?: number;
+  },
   input: { tenantId: string; visitorId: string; conversationId: string | null },
 ): Promise<Admission> {
   const { db, limiter } = deps;
@@ -63,7 +65,9 @@ export async function admitQuestion(
     .where(eq(tenants.id, input.tenantId))
     .limit(1);
   if (!tenant) return { ok: false, reason: "busy" };
-  const plan = planLimits(tenant.plan);
+  // Plan allowances and platform policies come from the operator console.
+  const [plan, policies] = await Promise.all([deps.platform.plan(tenant.plan), deps.platform.policies()]);
+  const maxConversationQuestions = deps.maxConversationQuestions ?? policies.conversationMaxQuestions;
 
   const refuse = async (reason: RefusalReason): Promise<Admission> => {
     await recordRefusal(db, input.tenantId, reason);
@@ -83,7 +87,7 @@ export async function admitQuestion(
           gt(messages.createdAt, sql`now() - interval '24 hours'`),
         ),
       );
-    if ((today?.count ?? 0) >= (tenant.visitorDailyLimit ?? DEFAULT_VISITOR_DAILY_LIMIT))
+    if ((today?.count ?? 0) >= (tenant.visitorDailyLimit ?? policies.visitorDailyLimit))
       return "visitor" as const;
 
     if (input.conversationId) {
@@ -92,7 +96,7 @@ export async function admitQuestion(
         .from(conversations)
         .where(and(eq(conversations.id, input.conversationId), eq(conversations.visitorId, input.visitorId)))
         .limit(1);
-      if (conversation && Math.ceil(conversation.messageCount / 2) >= deps.maxConversationQuestions) {
+      if (conversation && Math.ceil(conversation.messageCount / 2) >= maxConversationQuestions) {
         return "conversation" as const;
       }
     }
@@ -106,7 +110,7 @@ export async function admitQuestion(
   if (!release) return refuse("busy");
 
   // 3. Monthly limit: increment only while below the limit (atomic, no overshoot under load).
-  const limit = effectiveMonthlyLimit(tenant.plan, tenant.monthlyQuestionLimit);
+  const limit = effectiveMonthlyLimit(plan.monthlyQuestions, tenant.monthlyQuestionLimit);
   const counted = await withTenant(db, input.tenantId, (tx) =>
     tx.execute<{ questions: number }>(sql`
       insert into usage_counters (tenant_id, period, questions) values (${input.tenantId}, ${periodKey()}, 1)

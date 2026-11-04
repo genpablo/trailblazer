@@ -18,10 +18,14 @@ const envSchema = z.object({
   PUBLIC_URL: z.url().default("http://localhost:4000"),
   /** Admin portal origin; allowed to frame the chat page (playground). */
   ADMIN_ORIGIN: z.url().default("http://localhost:3000"),
-  /** Max chat messages per IP per minute on the public chat endpoint. */
-  CHAT_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(20),
-  /** Questions per conversation before the visitor is asked to start a new one. */
-  CONVERSATION_MAX_QUESTIONS: z.coerce.number().int().positive().default(40),
+  /**
+   * Overrides for operator policies (set in the operator console), mainly for tests and load tests:
+   * chat messages per IP per minute, and questions per conversation.
+   */
+  CHAT_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().optional(),
+  CONVERSATION_MAX_QUESTIONS: z.coerce.number().int().positive().optional(),
+  /** How long plans and policies are cached per API server. */
+  PLATFORM_CACHE_SECONDS: z.coerce.number().int().min(0).default(30),
   /** Shared rate limits and counters across API servers. Without it, limits are per server. */
   REDIS_URL: z.string().optional(),
 });

@@ -3,6 +3,7 @@ import type { EmbeddingProvider, LLMGateway } from "@traiblazer/llm";
 import type { Redis } from "ioredis";
 import type { AppConfig } from "./config.js";
 import type { Limiter } from "./lib/limiter.js";
+import type { PlatformConfig } from "./lib/platform.js";
 
 export interface AppContext {
   db: Db;
@@ -15,4 +16,6 @@ export interface AppContext {
   redis?: Redis | null;
   /** Per-business rate and concurrency limits; in-memory when not provided. */
   limiter?: Limiter;
+  /** Plans and policies from the operator console; created from `db` when not provided. */
+  platform?: PlatformConfig;
 }

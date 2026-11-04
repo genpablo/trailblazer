@@ -19,7 +19,7 @@ type BotParams = { Params: { tenantId: string; botId: string } };
 
 const DEFAULT_LANGUAGES = ["en", "fr"];
 
-export async function botRoutes(app: FastifyInstance, { db, config }: AppContext) {
+export async function botRoutes(app: FastifyInstance, { db, config, platform }: AppContext) {
   const base = "/v1/tenants/:tenantId/bots";
 
   app.get<TenantParams>(base, { preHandler: requireTenantRole(db, "viewer") }, async (request) => {
@@ -31,7 +31,8 @@ export async function botRoutes(app: FastifyInstance, { db, config }: AppContext
 
   app.post<TenantParams>(base, { preHandler: requireTenantRole(db, "editor") }, async (request, reply) => {
     const input = createBotSchema.parse(request.body);
-    if (!isSelectable(input.pack, input.variant)) {
+    const { releasedPackPhase } = await platform!.policies();
+    if (!isSelectable(input.pack, input.variant, releasedPackPhase)) {
       throw badRequest(
         `Industry "${input.pack}${input.variant ? `/${input.variant}` : ""}" is not available yet`,
       );
@@ -118,7 +119,7 @@ export async function botRoutes(app: FastifyInstance, { db, config }: AppContext
     return withTenant(db, request.tenant!.id, async (tx) => {
       const [current] = await tx.select().from(bots).where(eq(bots.id, botId)).limit(1);
       if (!current) throw notFound("Assistant");
-      if (input.variant !== undefined && !isSelectable(current.pack, input.variant)) {
+      if (input.variant !== undefined && !isSelectable(current.pack, input.variant, 4)) {
         throw badRequest(`Variant "${input.variant}" doesn't belong to ${current.pack}`);
       }
       const avatar = input.settings?.avatar;

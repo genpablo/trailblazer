@@ -1,11 +1,5 @@
 import { tenants, withTenant } from "@traiblazer/db";
-import {
-  DEFAULT_VISITOR_DAILY_LIMIT,
-  effectiveMonthlyLimit,
-  planLimits,
-  REPORTING_TIME_ZONE,
-  updateLimitsSchema,
-} from "@traiblazer/shared";
+import { effectiveMonthlyLimit, REPORTING_TIME_ZONE, updateLimitsSchema } from "@traiblazer/shared";
 import { eq, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../context.js";
@@ -25,7 +19,7 @@ function lastDates(days: number): string[] {
 }
 
 /** Usage report and limit settings for one business (PLAN §16; abuse & noisy-neighbour limits). */
-export async function usageRoutes(app: FastifyInstance, { db, config }: AppContext) {
+export async function usageRoutes(app: FastifyInstance, { db, config, platform }: AppContext) {
   app.get<TenantParams & { Querystring: { days?: string } }>(
     "/v1/tenants/:tenantId/usage",
     { preHandler: requireTenantRole(db, "viewer") },
@@ -34,8 +28,8 @@ export async function usageRoutes(app: FastifyInstance, { db, config }: AppConte
       const days = Math.min(Math.max(Number(request.query.days) || 30, 7), 90);
       const [tenant] = await db.select().from(tenants).where(eq(tenants.id, tenantId)).limit(1);
       if (!tenant) throw notFound("Business");
-      const plan = planLimits(tenant.plan);
-      const limit = effectiveMonthlyLimit(tenant.plan, tenant.monthlyQuestionLimit);
+      const [plan, policies] = await Promise.all([platform!.plan(tenant.plan), platform!.policies()]);
+      const limit = effectiveMonthlyLimit(plan.monthlyQuestions, tenant.monthlyQuestionLimit);
       const month = await currentUsage(db, tenantId);
       const tz = REPORTING_TIME_ZONE;
       const monthStart = sql`(date_trunc('month', now() at time zone ${tz}) at time zone ${tz})`;
@@ -80,13 +74,13 @@ export async function usageRoutes(app: FastifyInstance, { db, config }: AppConte
       const canSeeCost = hasRole(request.tenant!.role, "admin");
 
       return {
-        plan: { id: tenant.plan, ...plan },
+        plan,
         limits: {
           monthlyQuestionLimit: tenant.monthlyQuestionLimit,
           effectiveMonthlyLimit: limit,
           visitorDailyLimit: tenant.visitorDailyLimit,
-          defaultVisitorDailyLimit: DEFAULT_VISITOR_DAILY_LIMIT,
-          maxConversationQuestions: config.CONVERSATION_MAX_QUESTIONS,
+          defaultVisitorDailyLimit: policies.visitorDailyLimit,
+          maxConversationQuestions: config.CONVERSATION_MAX_QUESTIONS ?? policies.conversationMaxQuestions,
         },
         month: {
           period: month.period,
@@ -122,7 +116,7 @@ export async function usageRoutes(app: FastifyInstance, { db, config }: AppConte
       const input = updateLimitsSchema.parse(request.body);
       const [tenant] = await db.select().from(tenants).where(eq(tenants.id, tenantId)).limit(1);
       if (!tenant) throw notFound("Business");
-      const planMax = planLimits(tenant.plan).monthlyQuestions;
+      const planMax = (await platform!.plan(tenant.plan)).monthlyQuestions;
       if (input.monthlyQuestionLimit && input.monthlyQuestionLimit > planMax) {
         throw badRequest(`Your plan includes up to ${planMax} questions per month`);
       }

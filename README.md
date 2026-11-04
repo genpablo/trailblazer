@@ -74,6 +74,20 @@ pnpm test           # needs `pnpm db:up`; uses the traiblazer_test database
 
 CI (`.github/workflows/ci.yml`) runs the same steps against the docker-compose services.
 
+## Operator console
+
+Traiblazer staff manage plans, platform policies and businesses at http://localhost:3000/operator (the demo
+account is an operator). Plans and policies are stored in the database (`plans`, `platform_settings`) and
+every change is recorded in `operator_audit_logs`. Operator access can only be granted from the command line:
+
+```bash
+pnpm --filter @traiblazer/api operator grant someone@example.com
+pnpm --filter @traiblazer/api operator revoke someone@example.com
+pnpm --filter @traiblazer/api operator list
+```
+
+Non-operators get `404` from `/v1/operator/*`. Suspending a business takes all of its assistants offline.
+
 ## Multi-tenancy and security model
 
 - Every tenant-owned table has `tenant_id` and a Postgres **row-level security** policy
@@ -92,7 +106,7 @@ CI (`.github/workflows/ci.yml`) runs the same steps against the docker-compose s
 - Public chat: same-origin only, rate-limited per IP, visitors can only restore their own conversation.
 - Limits before any AI cost (`apps/api/src/lib/chat-guard.ts`): questions per visitor per day, questions per
   conversation, per-business questions per minute and concurrent answers (noisy neighbours), and the monthly
-  question limit (plan allowance in `packages/shared/src/plans.ts`, owner can set lower). Refused questions get a
+  question limit (plan allowance set in the operator console, owner can set lower). Refused questions get a
   translated message in the chat and are counted on the admin **Usage** page.
 - Set `REDIS_URL` (as in `.env.example`) so rate limits and per-business limits are shared by all API servers;
   without it they're kept per server, which is fine for a single server.
