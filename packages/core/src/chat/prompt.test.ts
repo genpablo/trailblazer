@@ -1,8 +1,9 @@
-import type { bots } from "@traiblazer/db";
+import type { bots, businessProfiles } from "@traiblazer/db";
 import { describe, expect, it } from "vitest";
 import { buildSystemBlocks } from "./prompt.js";
 
 type Bot = typeof bots.$inferSelect;
+type Profile = typeof businessProfiles.$inferSelect;
 
 const bot = (overrides: Partial<Bot>): Bot =>
   ({
@@ -20,6 +21,25 @@ const bot = (overrides: Partial<Bot>): Bot =>
 
 const botBlock = (b: Bot) =>
   buildSystemBlocks({ bot: b, profile: null, passages: [], now: new Date() })[1]!.text;
+
+describe("local time in the prompt", () => {
+  const now = new Date("2026-07-01T16:30:00Z");
+  const timeBlock = (timezone: string) =>
+    buildSystemBlocks({
+      bot: bot({}),
+      profile: { timezone, staffLanguages: [] } as unknown as Profile,
+      passages: [],
+      now,
+    })[2]!.text;
+
+  it("uses the business's time zone", () => {
+    expect(timeBlock("America/Winnipeg")).toContain("11:30 (America/Winnipeg)");
+  });
+
+  it("falls back to the default zone instead of failing on an unknown one", () => {
+    expect(timeBlock("Mars/Phobos")).toContain("12:30 (America/Toronto)");
+  });
+});
 
 describe("language rules in the prompt", () => {
   it("lists the languages offered and answers other languages by default", () => {

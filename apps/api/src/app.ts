@@ -25,6 +25,7 @@ export async function buildApp(input: AppContext): Promise<FastifyInstance> {
     limiter: input.limiter ?? new MemoryLimiter(),
     platform: input.platform ?? new PlatformConfig(input.db, input.config.PLATFORM_CACHE_SECONDS * 1000),
   };
+  const trust = ctx.config.TRUST_PROXY;
   const app = Fastify({
     logger:
       ctx.config.NODE_ENV === "test"
@@ -34,7 +35,8 @@ export async function buildApp(input: AppContext): Promise<FastifyInstance> {
             redact: ["req.headers.cookie", 'res.headers["set-cookie"]'],
             ...(ctx.config.NODE_ENV === "development" ? { transport: { target: "pino-pretty" } } : {}),
           },
-    trustProxy: true,
+    // Never `true`: that would take the client address from a header any visitor can send.
+    trustProxy: typeof trust === "number" ? (_address: string, hop: number) => hop < trust : trust,
     bodyLimit: 1024 * 1024,
   });
 

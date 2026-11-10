@@ -57,6 +57,19 @@ export function formatHours(hours: WeeklyHours | null | undefined): string | nul
 
 const escapeAttr = (s: string) => s.replace(/[<>"]/g, "");
 
+const DEFAULT_TIME_ZONE = "America/Toronto";
+
+/** The profile's time zone, or the default when it is missing or not a zone this runtime knows. */
+export function safeTimeZone(timeZone: string | null | undefined): string {
+  if (!timeZone) return DEFAULT_TIME_ZONE;
+  try {
+    new Intl.DateTimeFormat("en-CA", { timeZone });
+    return timeZone;
+  } catch {
+    return DEFAULT_TIME_ZONE;
+  }
+}
+
 function profileBlock(bot: Bot, profile: Profile | null): string {
   const lines: string[] = [];
   const push = (label: string, value: string | null | undefined) => {
@@ -76,7 +89,7 @@ function profileBlock(bot: Bot, profile: Profile | null): string {
     );
   }
   const hours = formatHours(profile?.hours);
-  if (hours) lines.push(`Opening hours (${profile?.timezone ?? "America/Toronto"}):\n${hours}`);
+  if (hours) lines.push(`Opening hours (${safeTimeZone(profile?.timezone)}):\n${hours}`);
   return lines.join("\n");
 }
 
@@ -104,7 +117,8 @@ export function buildSystemBlocks(input: {
 }): SystemBlock[] {
   const { bot, profile, passages, now } = input;
   const guidance = getPackGuidance(bot.pack, bot.variant);
-  const timezone = profile?.timezone ?? "America/Toronto";
+  // A stored zone the runtime doesn't know must not take the whole chat down.
+  const timezone = safeTimeZone(profile?.timezone);
 
   const botBlock = [
     `<business_profile>\n${profileBlock(bot, profile)}\n</business_profile>`,

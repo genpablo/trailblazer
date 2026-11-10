@@ -39,6 +39,52 @@ describe("page extraction", () => {
     expect(page.text).not.toMatch(/cookies|©|alert/);
   });
 
+  it("returns the footer separately, for the crawler to keep once per site", () => {
+    expect(page.footer).toBe("© 2026 Lakeside Bistro");
+    const contact = extractPage(
+      `<html><body><main><p>About our family restaurant in Thunder Bay.</p></main>
+       <footer><nav><a href="/">Home</a></nav><div><span>Open Mon–Fri 8am–3pm</span><br>123 Bay St</div>
+       <div>Call <a href="tel:8075550100">807-555-0100</a></div></footer></body></html>`,
+      "https://example.com/",
+    );
+    expect(contact.footer).toBe("Open Mon–Fri 8am–3pm\n123 Bay St\nCall 807-555-0100");
+    expect(contact.text).not.toContain("807-555-0100");
+  });
+
+  it("keeps the page when <body> carries a class that looks like a popup or newsletter", () => {
+    const withBodyClass = extractPage(
+      `<html><body class="home has-newsletter-popup"><div class="newsletter-popup">Subscribe!</div>
+       <main><p>We serve breakfast all day, every day of the week.</p></main></body></html>`,
+      "https://example.com/",
+    );
+    expect(withBodyClass.text).toBe("We serve breakfast all day, every day of the week.");
+  });
+
+  it("keeps repeated short values and joins table cells into rows", () => {
+    const hours = extractPage(
+      `<html><body><main><h2>Hours</h2><table>
+       <tr><th>Monday</th><td>9:00 – 17:00</td></tr>
+       <tr><th>Tuesday</th><td>9:00 – 17:00</td></tr>
+       <tr><th>Wednesday</th><td>Closed</td></tr>
+       <tr><th>Sunday</th><td>Closed</td></tr></table>
+       <h2>Menu</h2><ul><li>Burger</li><li>$12</li><li>Poutine</li><li>$12</li></ul></main></body></html>`,
+      "https://example.com/",
+    );
+    expect(hours.sections[0]!.text).toBe(
+      "Monday | 9:00 – 17:00\nTuesday | 9:00 – 17:00\nWednesday | Closed\nSunday | Closed",
+    );
+    expect(hours.sections[1]!.text).toBe("- Burger\n- $12\n- Poutine\n- $12");
+  });
+
+  it("still drops long blocks repeated on the page", () => {
+    const repeated = "Free delivery within Thunder Bay on all orders over fifty dollars this month.";
+    const dup = extractPage(
+      `<html><body><main><p>${repeated}</p><p>Unique text.</p><p>${repeated}</p></main></body></html>`,
+      "https://example.com/",
+    );
+    expect(dup.text).toBe(`${repeated}\nUnique text.`);
+  });
+
   it("collects absolute links without fragments or mailto", () => {
     expect(page.links).toContain("https://lakeside.example/contact");
     expect(page.links.some((l) => l.startsWith("mailto:"))).toBe(false);
@@ -80,11 +126,33 @@ describe("safe fetch", () => {
     "::1",
     "fd00::1",
     "::ffff:127.0.0.1",
+    // IPv4-mapped addresses in the hex form that URL parsing produces.
+    "::ffff:7f00:1",
+    "::ffff:a9fe:a9fe",
+    "::ffff:c0a8:1",
+    "::7f00:1",
+    "64:ff9b::7f00:1",
+    "2002:7f00:1::",
+    "fe80::1",
+    "100.64.0.1",
+    "0.0.0.0",
+    "not-an-address",
   ])("treats %s as private", (ip) => expect(isPrivateAddress(ip)).toBe(true));
 
   it("accepts public addresses", () => {
     expect(isPrivateAddress("8.8.8.8")).toBe(false);
     expect(isPrivateAddress("2606:4700::1111")).toBe(false);
+    expect(isPrivateAddress("::ffff:8.8.8.8")).toBe(false);
+    expect(isPrivateAddress("::ffff:808:808")).toBe(false);
+  });
+
+  it("rejects IPv4-mapped IPv6 hosts that point at private addresses", async () => {
+    for (const url of [
+      "http://[::ffff:127.0.0.1]:6379/",
+      "http://[::ffff:169.254.169.254]/latest/meta-data",
+    ]) {
+      await expect(assertPublicUrl(new URL(url))).rejects.toBeInstanceOf(UnsafeUrlError);
+    }
   });
 
   it("rejects private and non-http URLs", async () => {

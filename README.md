@@ -113,8 +113,11 @@ pnpm --filter @traiblazer/api superadmin list
 - Non-members get `404` for another business's routes. Roles: owner > admin > editor > viewer.
 - Passwords: scrypt (N=2^17); sessions: random token in an httpOnly SameSite=Lax cookie, only its
   SHA-256 is stored. Sign-in/sign-up are rate-limited per IP.
-- Website crawling blocks private/loopback/metadata addresses on every request and redirect (SSRF)
-  and respects robots.txt.
+- Per-IP limits use the address reported by trusted proxies only (`TRUST_PROXY`, default: proxies on
+  the same machine). **Set it for your load balancer in production** — see `.env.example`; an
+  `X-Forwarded-For` header sent by a visitor is ignored.
+- Website crawling blocks private/loopback/metadata addresses on every request and redirect (SSRF),
+  including IPv6 forms that wrap an IPv4 address, and respects robots.txt.
 - Public chat: same-origin only, rate-limited per IP, visitors can only restore their own conversation.
 - Limits before any AI cost (`apps/api/src/lib/chat-guard.ts`): questions per visitor per day, questions per
   conversation, per-business questions per minute and concurrent answers (noisy neighbours), and the monthly

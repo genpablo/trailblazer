@@ -43,6 +43,9 @@ const REFUSAL_MESSAGES: Record<RefusalReason, string> = {
 
 const KEY_RE = /^pk_(live|test)_[A-Za-z0-9_-]{10,64}$/;
 
+/** Longest one answer may take; below the 120 s lifetime of a business's concurrency slot. */
+const CHAT_TIME_LIMIT_MS = 90_000;
+
 /** Resolves stored settings into what the chat page and widget need (defaults applied). */
 export function toPublicAppearance(
   settings: BotSettings,
@@ -248,7 +251,11 @@ export async function publicRoutes(app: FastifyInstance, ctx: AppContext) {
           .send({ error: admission.reason, message: REFUSAL_MESSAGES[admission.reason] });
       }
 
-      const controller = new AbortController();
+      // A hung AI provider must not hold this business's answer slot forever.
+      const timeLimit = AbortSignal.timeout(CHAT_TIME_LIMIT_MS);
+      // When the visitor leaves mid-answer the (short) answer is still finished and stored, so its
+      // cost is metered and it is there when they come back; we only stop writing to the socket.
+      let visitorGone = false;
       reply.hijack();
       const res = reply.raw;
       res.writeHead(200, {
@@ -258,7 +265,7 @@ export async function publicRoutes(app: FastifyInstance, ctx: AppContext) {
         connection: "keep-alive",
       });
       res.on("close", () => {
-        if (!res.writableEnded) controller.abort();
+        if (!res.writableEnded) visitorGone = true;
       });
 
       try {
@@ -277,21 +284,20 @@ export async function publicRoutes(app: FastifyInstance, ctx: AppContext) {
             channel: input.channel,
             message: input.message,
             pageUrl: input.pageUrl ?? null,
-            signal: controller.signal,
+            signal: timeLimit,
           },
         )) {
-          if (controller.signal.aborted) break;
-          res.write(`data: ${JSON.stringify(event)}\n\n`);
+          if (!visitorGone) res.write(`data: ${JSON.stringify(event)}\n\n`);
         }
       } catch (error) {
         request.log.error(error, "chat stream failed");
-        if (!res.writableEnded) {
+        if (!visitorGone && !res.writableEnded) {
           res.write(
             `data: ${JSON.stringify({ type: "error", code: "failed", message: "Something went wrong" })}\n\n`,
           );
         }
       } finally {
-        res.end();
+        if (!res.writableEnded) res.end();
         await admission.release();
       }
     },

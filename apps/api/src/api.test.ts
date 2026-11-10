@@ -1,6 +1,6 @@
-import { createDb, type DbHandle, runMigrations, tenants, users } from "@traiblazer/db";
+import { createDb, type DbHandle, runMigrations, sessions, tenants, users } from "@traiblazer/db";
 import { createGatewayFromEnv } from "@traiblazer/llm";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "./app.js";
@@ -111,6 +111,39 @@ describe("auth", () => {
     expect(good.statusCode).toBe(200);
   });
 
+  it("ignores X-Forwarded-For unless it comes from a trusted proxy", async () => {
+    const sessionIp = async (remoteAddress: string, forwardedFor: string) => {
+      const email = uniqueEmail("ip");
+      const res = await app.inject({
+        method: "POST",
+        url: "/v1/auth/signup",
+        remoteAddress,
+        headers: { "x-forwarded-for": forwardedFor },
+        payload: { email, password: "correct-horse-battery", name: "IP" },
+      });
+      expect(res.statusCode).toBe(201);
+      const [row] = await ownerDb.db
+        .select({ ip: sessions.ip })
+        .from(sessions)
+        .innerJoin(users, eq(users.id, sessions.userId))
+        .where(eq(users.email, email));
+      return row?.ip;
+    };
+    // Sent straight to the API: the header is the visitor's own claim and is ignored.
+    expect(await sessionIp("203.0.113.9", "1.2.3.4")).toBe("203.0.113.9");
+    // Through a proxy on this machine: the address the proxy saw wins over what the visitor sent.
+    expect(await sessionIp("127.0.0.1", "6.6.6.6, 203.0.113.9")).toBe("203.0.113.9");
+  });
+
+  it("reads TRUST_PROXY as off, a hop count or a list of proxies", () => {
+    const trust = (value?: string) =>
+      loadConfig({ ...(value === undefined ? {} : { TRUST_PROXY: value }) } as NodeJS.ProcessEnv).TRUST_PROXY;
+    expect(trust()).toEqual(["loopback"]);
+    expect(trust("false")).toBe(false);
+    expect(trust("2")).toBe(2);
+    expect(trust("10.0.0.0/8, 172.16.0.0/12")).toEqual(["10.0.0.0/8", "172.16.0.0/12"]);
+  });
+
   it("rejects duplicate emails and weak input", async () => {
     const { email } = await signup("carol");
     const dup = await app.inject({
@@ -175,6 +208,17 @@ describe("tenants and bots", () => {
     });
     expect(profile.statusCode).toBe(200);
     expect(profile.json().profile.staffLanguages).toEqual(["en", "fr", "uk"]);
+
+    // Time zones must be real: an unknown one would break "current local time" for every chat.
+    const setZone = (timezone: string) =>
+      app.inject({
+        method: "PUT",
+        url: `/v1/tenants/${tenantId}/bots/${body.bot.id}/profile`,
+        headers: { cookie },
+        payload: { timezone },
+      });
+    expect((await setZone("Mars/Phobos")).statusCode).toBe(400);
+    expect((await setZone("America/Winnipeg")).json().profile.timezone).toBe("America/Winnipeg");
 
     const patched = await app.inject({
       method: "PATCH",

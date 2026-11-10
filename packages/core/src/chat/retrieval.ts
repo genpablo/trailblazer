@@ -13,6 +13,11 @@ export interface Passage {
 
 const RRF_K = 60;
 
+/** Q&A matching (see retrievePassages): the lowest score that counts, and the scores of word matches. */
+const QA_MIN_MATCH = 0.45;
+const QA_QUESTION_MATCH = 0.6;
+const QA_CONTENT_MATCH = 0.5;
+
 /** Builds an OR-query of the words in the given texts, safe for to_tsquery (letters/digits only). */
 export function toOrQuery(texts: string[]): string | null {
   const words = new Set<string>();
@@ -109,19 +114,36 @@ export async function retrievePassages(
     );
   }
 
-  // Owner-written Q&A pairs: strongest signal when the question matches.
-  const qaRows = await tx.execute<{ id: string; question: string; answer: string; match: number }>(sql`
-    select id, question, answer,
-      greatest(similarity(question, ${fuzzyText}),
-               case when ${orQuery}::text is not null
-                    and tsv @@ (to_tsquery('simple', coalesce(${orQuery}, '')) || to_tsquery('english', coalesce(${orQuery}, '')) || to_tsquery('french', coalesce(${orQuery}, '')))
-                    then 0.35 else 0 end) as match
-    from qa_pairs
-    where bot_id = ${input.botId} and enabled
-    order by match desc
-    limit 5`);
+  // Owner-written Q&A pairs: strongest signal when the question matches. A pair must really be
+  // about the question — sharing everyday words ("do", "you", "have") is not a match — because a
+  // matching pair outranks every page and replaces the page sources under the answer.
+  // Each query (the visitor's words and its EN/FR rewrites) is compared on its own, so a rewrite
+  // can't dilute the similarity of another. A pair matches a query when
+  //   - its question reads much like the query (trigram similarity), or
+  //   - every meaningful word of the query (stop words dropped, stemmed) is in its question, or
+  //   - the query has two or more such words and all of them are in its question + answer.
+  const qaQueries = input.queries.map((q) => q.trim().slice(0, 300)).filter(Boolean);
+  const perQuery = qaQueries.map((q) => {
+    const stemmed = (["english", "french"] as const).map((config) => {
+      const tsq = sql`plainto_tsquery(${config}::regconfig, ${q})`;
+      return sql`case
+        when numnode(${tsq}) = 0 then 0::real
+        when to_tsvector(${config}::regconfig, question) @@ ${tsq} then ${QA_QUESTION_MATCH}::real
+        when numnode(${tsq}) >= 3 and tsv @@ ${tsq} then ${QA_CONTENT_MATCH}::real
+        else 0::real end`;
+    });
+    return sql`greatest(similarity(question, ${q}), ${sql.join(stemmed, sql`, `)})`;
+  });
+  const qaRows = perQuery.length
+    ? await tx.execute<{ id: string; question: string; answer: string; match: number }>(sql`
+        select id, question, answer, greatest(${sql.join(perQuery, sql`, `)}) as match
+        from qa_pairs
+        where bot_id = ${input.botId} and enabled
+        order by match desc
+        limit 5`)
+    : [];
   qaRows
-    .filter((r) => Number(r.match) >= 0.3)
+    .filter((r) => Number(r.match) >= QA_MIN_MATCH)
     .slice(0, 3)
     .forEach((row, rank) => {
       scores.set(`q:${row.id}`, {

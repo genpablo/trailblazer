@@ -43,14 +43,20 @@ export async function fetchConfig(publicKey: string): Promise<PublicBotConfig> {
   return (await res.json()).bot as PublicBotConfig;
 }
 
+/**
+ * A visitor's earlier conversation. Returns null when it no longer exists (so the saved id can be
+ * forgotten) and throws on temporary problems (network, rate limit, server error), where the saved
+ * id must be kept.
+ */
 export async function fetchHistory(
   publicKey: string,
   conversationId: string,
   visitorId: string,
-): Promise<StoredMessage[]> {
+): Promise<StoredMessage[] | null> {
   const params = new URLSearchParams({ key: publicKey, visitorId });
   const res = await fetch(`/v1/public/conversations/${encodeURIComponent(conversationId)}?${params}`);
-  if (!res.ok) return [];
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`history ${res.status}`);
   return (await res.json()).messages as StoredMessage[];
 }
 

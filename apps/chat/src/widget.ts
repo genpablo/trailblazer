@@ -35,7 +35,10 @@ import { DEFAULT_COLOR, iconSvg, isHexColor, type PublicAppearance, textOn } fro
     const onColor = textOn(color);
     const side = (script!.dataset.position ?? appearance.launcherPosition) === "left" ? "left" : "right";
     const label = script!.dataset.label ?? appearance.launcherLabel ?? "";
-    const title = appearance.assistantName ?? label ?? "Chat";
+    const title = appearance.assistantName || label || "Chat";
+    const closeLabel = /^fr\b/i.test(document.documentElement.lang || navigator.language)
+      ? "Fermer"
+      : "Close";
     const avatar = appearance.avatar;
     const imageUrl = avatar?.kind === "image" && avatar.url.startsWith(`${origin}/`) ? avatar.url : null;
     const iconMarkup = imageUrl
@@ -60,12 +63,21 @@ import { DEFAULT_COLOR, iconSvg, isHexColor, type PublicAppearance, textOn } fro
         box-shadow: 0 8px 32px rgba(0,0,0,.28); background: #fff; }
       .panel.open { display: block; }
       iframe { width: 100%; height: 100%; border: 0; }
+      /* Shown until the chat page says it is ready: if the page never loads (blocked, offline,
+         unavailable) the visitor can still close the panel, which covers the screen on phones. */
+      .close { position: absolute; top: 8px; inset-inline-end: 8px; width: 40px; height: 40px; border: 0;
+        border-radius: 50%; background: rgba(0,0,0,.06); color: #333; cursor: pointer;
+        font: 400 24px/1 system-ui, sans-serif; }
+      .close:focus-visible { outline: 3px solid ${color}; outline-offset: 2px; }
+      .panel.ready .close { display: none; }
       @media (max-width: 480px) {
         .panel { inset: 0; width: 100%; height: 100%; max-height: none; border-radius: 0; bottom: 0; ${side}: 0; }
         .panel.open + .launcher { display: none; }
       }
     </style>
-    <div class="panel" role="dialog" aria-label="${escapeHtml(title)}"></div>
+    <div class="panel" role="dialog" aria-label="${escapeHtml(title)}">
+      <button class="close" type="button" aria-label="${closeLabel}">×</button>
+    </div>
     <button class="launcher" type="button" aria-expanded="false" aria-label="${escapeHtml(label || title)}">
       ${iconMarkup}${label ? `<span>${escapeHtml(label)}</span>` : ""}
     </button>`;
@@ -88,15 +100,22 @@ import { DEFAULT_COLOR, iconSvg, isHexColor, type PublicAppearance, textOn } fro
       if (open) frame?.focus();
     };
 
+    const close = () => {
+      setOpen(false);
+      launcher.focus();
+    };
     launcher.addEventListener("click", () => setOpen(!panel.classList.contains("open")));
+    (shadow.querySelector(".close") as HTMLButtonElement).addEventListener("click", close);
     window.addEventListener("message", (event) => {
-      if (event.origin === origin && (event.data as { type?: string })?.type === "tb:close") {
-        setOpen(false);
-        launcher.focus();
-      }
+      // Only our own chat frame may drive the panel.
+      if (event.origin !== origin || !frame || event.source !== frame.contentWindow) return;
+      const type = (event.data as { type?: string } | null)?.type;
+      if (type === "tb:ready") panel.classList.add("ready");
+      else if (type === "tb:close") close();
     });
+    // Escape pressed on the host page; inside the chat frame, the chat page sends tb:close itself.
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && panel.classList.contains("open")) setOpen(false);
+      if (event.key === "Escape" && panel.classList.contains("open")) close();
     });
 
     (document.body ?? document.documentElement).appendChild(host);
