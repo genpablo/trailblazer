@@ -13,15 +13,26 @@ export interface ExtractedPage {
   links: string[];
   /** Full plain text (for hashing and storage). */
   text: string;
+  /**
+   * Text of the page footer (hours, phone, address on many small-business sites). It repeats on
+   * every page, so it is left out of `text`; the crawler adds it once per site.
+   */
+  footer: string | null;
 }
 
 const REMOVE =
   "script, style, noscript, template, svg, canvas, iframe, form, nav, footer, header, aside, " +
   "[role=navigation], [role=banner], [role=contentinfo], [aria-hidden=true], [hidden]";
 const NOISE_ATTR = /(cookie|consent|gdpr|newsletter|popup|modal|share|social|breadcrumb|skip-link)/i;
-const BLOCKS = "h1, h2, h3, h4, h5, h6, p, li, dt, dd, td, th, blockquote, pre, figcaption, address";
+const BLOCKS = "h1, h2, h3, h4, h5, h6, p, li, dt, dd, tr, blockquote, pre, figcaption, address";
+/** Never removed as "noise": a class like "has-newsletter-popup" on these describes the whole page. */
+const PAGE_CONTAINERS = new Set(["html", "body", "main", "article"]);
+/** Only longer blocks are de-duplicated; short repeats ("Closed", "9:00 – 17:00", "$12") are real content. */
+const DEDUPE_MIN_CHARS = 60;
+const MAX_FOOTER_CHARS = 1500;
 
 const clean = (s: string) => s.replace(/\s+/g, " ").trim();
+const tagOf = (el: unknown) => (el as { tagName?: string }).tagName?.toLowerCase() ?? "";
 
 /** Extracts readable sections (heading + text) and links from an HTML page. */
 export function extractPage(html: string, pageUrl: string): ExtractedPage {
@@ -43,8 +54,18 @@ export function extractPage(html: string, pageUrl: string): ExtractedPage {
     }
   });
 
+  // Footer text is read before footers are removed from the main content.
+  const $footer = $("footer, [role=contentinfo]").first().clone();
+  $footer.find("script, style, noscript, template, svg, nav, form, [role=navigation]").remove();
+  // Footers are mostly <div>/<span> soup: break lines at block boundaries, then tidy each line.
+  $footer.find("br").replaceWith("\n");
+  $footer.find("p, li, div, address, tr, h1, h2, h3, h4, h5, h6, dt, dd, section, ul, ol").append("\n");
+  const footerLines = [...new Set($footer.text().split("\n").map(clean).filter(Boolean))];
+  const footerText = footerLines.join("\n").slice(0, MAX_FOOTER_CHARS);
+
   $(REMOVE).remove();
   $("[id], [class]").each((_, el) => {
+    if (PAGE_CONTAINERS.has(tagOf(el))) return;
     const marker = `${$(el).attr("id") ?? ""} ${$(el).attr("class") ?? ""}`;
     if (NOISE_ATTR.test(marker)) $(el).remove();
   });
@@ -61,11 +82,24 @@ export function extractPage(html: string, pageUrl: string): ExtractedPage {
     const $el = $(el);
     // Skip containers whose text is already captured by a nested block (e.g. <li><p>…</p></li>).
     if ($el.find(BLOCKS).length) return;
-    const text = clean($el.text());
-    if (!text || seen.has(text)) return;
-    seen.add(text);
+    const tag = tagOf(el);
+    // Table rows keep their cells together ("Monday | 9:00 – 17:00"), so hours and prices stay
+    // attached to what they describe.
+    const text =
+      tag === "tr"
+        ? $el
+            .children("td, th")
+            .map((_, cell) => clean($(cell).text()))
+            .get()
+            .filter(Boolean)
+            .join(" | ")
+        : clean($el.text());
+    if (!text) return;
+    if (text.length >= DEDUPE_MIN_CHARS) {
+      if (seen.has(text)) return;
+      seen.add(text);
+    }
 
-    const tag = (el as { tagName?: string }).tagName?.toLowerCase() ?? "";
     if (/^h[1-6]$/.test(tag)) {
       if (current.text) sections.push(current);
       current = { heading: text, text: "" };
@@ -83,5 +117,5 @@ export function extractPage(html: string, pageUrl: string): ExtractedPage {
   }
 
   const text = sections.map((s) => (s.heading ? `${s.heading}\n${s.text}` : s.text)).join("\n\n");
-  return { title, language, sections, links: [...links], text };
+  return { title, language, sections, links: [...links], text, footer: footerText || null };
 }

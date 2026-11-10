@@ -86,27 +86,48 @@ export function App({ publicKey, mode, pageUrl, preview = false }: AppProps) {
   useEffect(() => {
     fetchConfig(publicKey)
       .then(async (cfg) => {
-        setConfig(cfg);
-        setLang(pickLanguage(cfg, publicKey));
+        // Earlier messages are loaded before the chat becomes usable, so a quick first message
+        // can't be overwritten by history arriving late.
         if (conversationId.current) {
-          const history = await fetchHistory(publicKey, conversationId.current, visitor.current);
-          if (history.length) {
-            setMessages(
-              history.map((m) => ({
-                id: nextId(),
-                role: m.role,
-                content: m.content,
-                citations: m.citations,
-              })),
-            );
-          } else {
-            conversationId.current = null;
-            conversationStore.set(publicKey, null);
+          try {
+            const history = await fetchHistory(publicKey, conversationId.current, visitor.current);
+            if (history?.length) {
+              setMessages(
+                history.map((m) => ({
+                  id: nextId(),
+                  role: m.role,
+                  content: m.content,
+                  citations: m.citations,
+                })),
+              );
+            } else {
+              // The conversation is gone: start fresh next time.
+              conversationId.current = null;
+              conversationStore.set(publicKey, null);
+            }
+          } catch {
+            // Temporary problem: keep the saved conversation (the next message continues it) and
+            // open the chat without the earlier messages rather than showing "unavailable".
           }
         }
+        setLang(pickLanguage(cfg, publicKey));
+        setConfig(cfg);
       })
       .catch(() => setFailed(true));
   }, [publicKey]);
+
+  // Floating widget: tell the loader the chat is usable (it hides its own close button then),
+  // and let Escape close the panel while focus is inside the chat.
+  const ready = config !== null;
+  useEffect(() => {
+    if (mode !== "widget") return;
+    if (ready) window.parent.postMessage({ type: "tb:ready" }, "*");
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.isComposing) window.parent.postMessage({ type: "tb:close" }, "*");
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mode, ready]);
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
@@ -159,7 +180,10 @@ export function App({ publicKey, mode, pageUrl, preview = false }: AppProps) {
             // Limits and "busy" are expected situations, shown as a calm notice rather than an error.
             notice: Boolean(notice),
             error: !notice,
-            content: notice ?? ui(lang, event.code === "unavailable" ? "unavailable" : "error"),
+            content:
+              notice ??
+              // "not_found": the assistant was paused or removed while the chat was open.
+              ui(lang, event.code === "unavailable" || event.code === "not_found" ? "unavailable" : "error"),
           }));
         }
       }

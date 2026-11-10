@@ -1,5 +1,5 @@
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { BlockList, isIP } from "node:net";
 
 /**
  * Fetching customer-supplied URLs from our servers is a server-side request forgery risk: a URL
@@ -20,30 +20,50 @@ export interface SafeFetchOptions {
 
 export const USER_AGENT = "TraiblazerBot/0.1 (+https://traiblazer.example/bot)";
 
-function isPrivateIPv4(ip: string): boolean {
-  const [a = 0, b = 0] = ip.split(".").map(Number);
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 198 && (b === 18 || b === 19)) ||
-    a >= 224
-  );
+/**
+ * Addresses a crawler must never reach: loopback, private networks, link-local (cloud metadata),
+ * carrier-grade NAT, documentation/benchmark ranges, multicast and reserved space, plus the IPv6
+ * forms that wrap an IPv4 address (NAT64, 6to4, IPv4-compatible). IPv4-mapped IPv6 addresses
+ * (::ffff:a.b.c.d, also in hex form) are checked against the IPv4 rules by BlockList itself.
+ */
+const blocked = new BlockList();
+for (const [network, prefix] of [
+  ["0.0.0.0", 8],
+  ["10.0.0.0", 8],
+  ["100.64.0.0", 10],
+  ["127.0.0.0", 8],
+  ["169.254.0.0", 16],
+  ["172.16.0.0", 12],
+  ["192.0.0.0", 24],
+  ["192.0.2.0", 24],
+  ["192.168.0.0", 16],
+  ["198.18.0.0", 15],
+  ["198.51.100.0", 24],
+  ["203.0.113.0", 24],
+  ["224.0.0.0", 3],
+] as const) {
+  blocked.addSubnet(network, prefix, "ipv4");
+}
+for (const [network, prefix] of [
+  ["::", 96], // unspecified, loopback and IPv4-compatible addresses
+  ["64:ff9b::", 96], // NAT64
+  ["64:ff9b:1::", 48],
+  ["100::", 64], // discard-only
+  ["2001:db8::", 32], // documentation
+  ["2002::", 16], // 6to4
+  ["fc00::", 7], // unique local
+  ["fe80::", 10], // link-local
+  ["fec0::", 10], // site-local (deprecated)
+  ["ff00::", 8], // multicast
+] as const) {
+  blocked.addSubnet(network, prefix, "ipv6");
 }
 
-function isPrivateIPv6(ip: string): boolean {
-  const v = ip.toLowerCase();
-  if (v === "::" || v === "::1") return true;
-  if (v.startsWith("::ffff:")) return isPrivateIPv4(v.slice(7));
-  return v.startsWith("fc") || v.startsWith("fd") || v.startsWith("fe80") || v.startsWith("ff");
-}
-
+/** True for any address that is not a public unicast address (unparseable input counts as private). */
 export function isPrivateAddress(ip: string): boolean {
-  return isIP(ip) === 6 ? isPrivateIPv6(ip) : isPrivateIPv4(ip);
+  const family = isIP(ip);
+  if (!family) return true;
+  return blocked.check(ip, family === 6 ? "ipv6" : "ipv4");
 }
 
 export async function assertPublicUrl(url: URL, allowPrivate = false): Promise<void> {
@@ -52,7 +72,12 @@ export async function assertPublicUrl(url: URL, allowPrivate = false): Promise<v
   if (url.username || url.password) throw new UnsafeUrlError("Credentials in URLs are not allowed");
   if (allowPrivate) return;
   const host = url.hostname.replace(/^\[|\]$/g, "");
-  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal")) {
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".internal") ||
+    host.endsWith(".local")
+  ) {
     throw new UnsafeUrlError("Private host");
   }
   const addresses = isIP(host) ? [{ address: host }] : await lookup(host, { all: true, verbatim: true });

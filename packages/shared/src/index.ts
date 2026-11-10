@@ -157,6 +157,16 @@ export const publicChatSchema = z.object({
 });
 export type PublicChatInput = z.infer<typeof publicChatSchema>;
 
+/** True for an IANA time zone name this runtime knows (e.g. "America/Toronto"). */
+export function isValidTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-CA", { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const timeOfDay = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM (24h)");
 const dayHours = z.array(z.object({ open: timeOfDay, close: timeOfDay })).max(4);
 
@@ -167,7 +177,7 @@ export const businessProfileSchema = z
     email: z.email().max(254).nullable(),
     websiteUrl: httpUrl.nullable(),
     address: z.record(z.string(), z.string().max(200)).nullable(),
-    timezone: z.string().max(64),
+    timezone: z.string().trim().min(1).max(64).refine(isValidTimeZone, "Unknown time zone"),
     hours: z
       .object({
         mon: dayHours,

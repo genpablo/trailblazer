@@ -24,6 +24,9 @@ const SKIP_EXTENSIONS =
 const SKIP_PATHS =
   /\/(wp-admin|wp-login|wp-json|cart|checkout|account|login|signin|signup|register|search|feed)(\/|$)/i;
 
+/** Section title for the site footer (contact details, hours, address), stored with the first page. */
+const FOOTER_HEADING = "Website footer (contact, hours, address)";
+
 const sameSite = (a: URL, b: URL) => a.hostname.replace(/^www\./, "") === b.hostname.replace(/^www\./, "");
 
 function normalize(url: URL): string {
@@ -83,6 +86,7 @@ export async function crawlSite(startUrl: string, options: CrawlOptions = {}): P
 
   const pages: CrawledPage[] = [];
   const seenFinal = new Set<string>();
+  let footerKept = false;
   while (queue.length && pages.length < maxPages) {
     const url = queue.shift() as string;
     if (!allowed(url)) continue;
@@ -95,6 +99,12 @@ export async function crawlSite(startUrl: string, options: CrawlOptions = {}): P
       const page = { url: finalUrl, ...extractPage(res.body, finalUrl) };
       for (const link of page.links) enqueue(link);
       if (page.text.length >= 50) {
+        // The footer repeats on every page; keep it once, with the first page read.
+        if (page.footer && !footerKept) {
+          footerKept = true;
+          page.sections.push({ heading: FOOTER_HEADING, text: page.footer });
+          page.text = `${page.text}\n\n${FOOTER_HEADING}\n${page.footer}`;
+        }
         pages.push(page);
         options.onPage?.(page);
       }

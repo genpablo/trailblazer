@@ -32,6 +32,11 @@ export interface ChatInput {
   channel: Channel;
   message: string;
   pageUrl?: string | null;
+  /**
+   * Stops the AI calls (e.g. a time limit). The answer so far is still stored and metered. Don't
+   * wire this to "the visitor closed the page": let the short answer finish instead, so its cost is
+   * recorded and it is there when the visitor comes back.
+   */
   signal?: AbortSignal;
 }
 
@@ -170,25 +175,41 @@ export async function* runChat(deps: ChatDeps, input: ChatInput): AsyncGenerator
 
   try {
     // 2. Search queries: rewrite follow-ups and translate other languages into EN/FR.
+    // Rewriting and embeddings improve the search but aren't required for an answer: if either
+    // fails, carry on with the visitor's own words and keyword search.
     let queries = [message];
     if (history.length || !isEnOrFr(language)) {
-      const aux = await deps.gateway.complete("aux", {
-        ...buildSearchQueryPrompt(history, message),
-        maxTokens: 2000,
-        effort: "low",
-        signal: input.signal,
-      });
-      auxMeta = aux;
-      queries = parseSearchQueries(aux.text, message);
+      try {
+        const aux = await deps.gateway.complete("aux", {
+          ...buildSearchQueryPrompt(history, message),
+          maxTokens: 2000,
+          effort: "low",
+          signal: input.signal,
+        });
+        auxMeta = aux;
+        queries = parseSearchQueries(aux.text, message);
+      } catch (error) {
+        if (input.signal?.aborted) throw error;
+        deps.log?.("search query rewrite failed; using the visitor's message", {
+          error: error instanceof Error ? error.message : String(error),
+          botId: bot.id,
+        });
+      }
     }
 
     // 3. Retrieve business information.
-    const embedding = deps.embeddings
-      ? {
-          vector: (await deps.embeddings.embed([queries.join("\n")], "query"))[0]!,
-          model: deps.embeddings.model,
-        }
-      : null;
+    let embedding: { vector: number[]; model: string } | null = null;
+    if (deps.embeddings) {
+      try {
+        const [vector] = await deps.embeddings.embed([queries.join("\n")], "query");
+        if (vector) embedding = { vector, model: deps.embeddings.model };
+      } catch (error) {
+        deps.log?.("query embedding failed; using keyword search only", {
+          error: error instanceof Error ? error.message : String(error),
+          botId: bot.id,
+        });
+      }
+    }
     const passages = await withTenant(deps.db, input.tenantId, (tx) =>
       retrievePassages(tx, { botId: bot.id, queries, embedding }),
     );
@@ -219,7 +240,8 @@ export async function* runChat(deps: ChatDeps, input: ChatInput): AsyncGenerator
       citations = [];
     }
   } catch (error) {
-    if (input.signal?.aborted) return;
+    // Also reached when `signal` fires (the caller's time limit): what was written so far is still
+    // stored below, so the conversation log and the usage records stay complete.
     deps.log?.("chat failed", {
       error: error instanceof Error ? error.message : String(error),
       botId: bot.id,

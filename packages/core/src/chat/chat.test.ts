@@ -13,7 +13,7 @@ import {
   usageEvents,
   withTenant,
 } from "@traiblazer/db";
-import { LLMGateway, OfflineProvider } from "@traiblazer/llm";
+import { LLMGateway, type LLMProvider, OfflineProvider } from "@traiblazer/llm";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { tsvectorSql } from "../knowledge/index-documents.js";
@@ -215,6 +215,25 @@ describe("retrieval", () => {
     expect(passages[0]?.kind).toBe("qa");
   });
 
+  it("ignores a Q&A pair that only shares common words with the question", async () => {
+    const passages = await withTenant(app.db, tenantId, (tx) =>
+      retrievePassages(tx, { botId, queries: ["Do you have oat milk?"] }),
+    );
+    expect(passages.filter((p) => p.kind === "qa")).toEqual([]);
+    expect(passages[0]?.url).toMatch(/\/menu$/);
+  });
+
+  it("matches a Q&A pair for a paraphrase, and for a follow-up rewritten into several queries", async () => {
+    for (const queries of [
+      ["Are there gluten-free options?"],
+      ["gluten free?"],
+      ["and without gluten?", "gluten-free options", "options sans gluten"],
+    ]) {
+      const passages = await withTenant(app.db, tenantId, (tx) => retrievePassages(tx, { botId, queries }));
+      expect(passages[0]?.kind, queries.join(" / ")).toBe("qa");
+    }
+  });
+
   it("never returns another tenant's knowledge", async () => {
     const passages = await withTenant(app.db, otherTenantId, (tx) =>
       retrievePassages(tx, { botId, queries: ["blueberry pie"] }),
@@ -291,6 +310,84 @@ describe("chat engine", () => {
       ),
     );
     expect(done.flags.unanswered).toBe(true);
+  });
+
+  it("still answers when query rewriting or embeddings fail", async () => {
+    const failing: LLMProvider = {
+      id: "failing",
+      // biome-ignore lint/correctness/useYield: fails before producing anything
+      async *stream() {
+        throw new Error("aux provider down");
+      },
+    };
+    const auxDown = new LLMGateway({
+      providers: [new OfflineProvider(), failing],
+      routes: {
+        chat: [{ provider: "offline", model: "knowledge" }],
+        aux: [{ provider: "failing", model: "x" }],
+      },
+    });
+    const embeddings = {
+      model: "broken-embeddings",
+      embed: async () => {
+        throw new Error("embeddings down");
+      },
+    };
+    const logged: string[] = [];
+    const deps = { db: app.db, gateway: auxDown, embeddings, log: (msg: string) => logged.push(msg) };
+
+    const first = await collect(
+      runChat(deps, { tenantId, botId, visitorId: "v3", channel: "hosted", message: "Is the pie fresh?" }),
+    );
+    const conversationId = (first.events[0] as { conversationId: string }).conversationId;
+    // The follow-up needs a rewrite (there is history); the rewrite fails and is skipped.
+    const second = await collect(
+      runChat(deps, {
+        tenantId,
+        botId,
+        conversationId,
+        visitorId: "v3",
+        channel: "hosted",
+        message: "Do you have oat milk?",
+      }),
+    );
+    expect(second.text).toContain("Oat milk");
+    expect(second.done.flags.error).toBeUndefined();
+    expect(logged).toEqual(expect.arrayContaining([expect.stringContaining("rewrite failed")]));
+    expect(logged).toEqual(expect.arrayContaining([expect.stringContaining("embedding failed")]));
+  });
+
+  it("stores what was written when the time limit stops an answer", async () => {
+    const stalls: LLMProvider = {
+      id: "stalls",
+      async *stream() {
+        yield { type: "text", text: "We are open" };
+        throw new Error("This operation was aborted");
+      },
+    };
+    const stalling = new LLMGateway({
+      providers: [new OfflineProvider(), stalls],
+      routes: { chat: [{ provider: "stalls", model: "x" }], aux: [{ provider: "offline", model: "echo" }] },
+    });
+    const { events, done } = await collect(
+      runChat(
+        { db: app.db, gateway: stalling },
+        {
+          tenantId,
+          botId,
+          visitorId: "v4",
+          channel: "hosted",
+          message: "When are you open?",
+          signal: AbortSignal.abort(),
+        },
+      ),
+    );
+    expect(done.flags.error).toBe(true);
+    const conversationId = (events[0] as { conversationId: string }).conversationId;
+    const stored = await withTenant(app.db, tenantId, (tx) =>
+      tx.select().from(messages).where(eq(messages.conversationId, conversationId)),
+    );
+    expect(stored.find((m) => m.role === "assistant")?.content).toBe("We are open");
   });
 
   it("refuses paused bots", async () => {
